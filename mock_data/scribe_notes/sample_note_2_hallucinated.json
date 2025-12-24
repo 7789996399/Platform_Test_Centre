@@ -1,0 +1,61 @@
+{
+  "note_id": "note-002",
+  "patient": {
+    "id": "patient-67890",
+    "name": "Maria Garcia",
+    "dob": "1965-08-22",
+    "mrn": "MRN-123789"
+  },
+  "encounter": {
+    "id": "encounter-002",
+    "type": "Pre-operative Assessment",
+    "date": "2025-12-24",
+    "provider": "Dr. Jean Raubenheimer"
+  },
+  "ai_scribe_output": {
+    "generated_at": "2025-12-24T14:15:00Z",
+    "model": "cerner-ai-scribe-v1",
+    "sections": {
+      "chief_complaint": "59-year-old female presents for pre-operative assessment prior to scheduled CABG.",
+      "history_of_present_illness": "Patient reports chest pain with exertion, relieved by rest. Three-vessel coronary artery disease on recent catheterization. Ejection fraction 45%.",
+      "medications": [
+        {"name": "Metoprolol", "dose": "25mg", "route": "PO", "frequency": "BID"},
+        {"name": "Lisinopril", "dose": "5mg", "route": "PO", "frequency": "daily"},
+        {"name": "Aspirin", "dose": "325mg", "route": "PO", "frequency": "daily"},
+        {"name": "Clopidogrel", "dose": "75mg", "route": "PO", "frequency": "daily"},
+        {"name": "Warfarin", "dose": "5mg", "route": "PO", "frequency": "daily"}
+      ],
+      "allergies": "Penicillin (rash), Sulfa drugs (anaphylaxis)",
+      "cardiac_history": "History of inferior MI in 2020. Prior PCI to RCA with drug-eluting stent. Paroxysmal atrial fibrillation on anticoagulation.",
+      "physical_exam": "BP 145/88, HR 72, SpO2 97% on room air. Irregular rhythm. No murmurs. Bilateral lower extremity edema 1+.",
+      "assessment_plan": "High-risk patient for CABG. Recommend holding Clopidogrel 5 days pre-op, bridging anticoagulation. Cardiology consulted for afib management. Consider IABP standby."
+    },
+    "hallucination_flags": [
+      {
+        "claim": "Warfarin 5mg daily",
+        "issue": "NOT in transcript - patient never mentioned warfarin",
+        "severity": "HIGH",
+        "type": "fabricated_medication"
+      },
+      {
+        "claim": "Sulfa drugs (anaphylaxis)",
+        "issue": "NOT in transcript - only penicillin allergy mentioned",
+        "severity": "HIGH", 
+        "type": "fabricated_allergy"
+      },
+      {
+        "claim": "Bilateral lower extremity edema 1+",
+        "issue": "NOT in transcript - physical exam finding fabricated",
+        "severity": "MEDIUM",
+        "type": "fabricated_exam_finding"
+      },
+      {
+        "claim": "Consider IABP standby",
+        "issue": "NOT discussed - AI added recommendation",
+        "severity": "MEDIUM",
+        "type": "fabricated_recommendation"
+      }
+    ]
+  },
+  "source_transcript": "Good afternoon Mrs. Garcia. I'm Dr. Raubenheimer, the anesthesiologist. You're here for your pre-op before your bypass surgery. How are you feeling? [Patient: Nervous but ready to get it done.] I understand. Any chest pain recently? [Patient: Yes, when I walk too far or climb stairs. Goes away when I rest.] Good that it goes away with rest. Now, your heart cath showed three-vessel disease, and your heart function is about 45%, which is a bit reduced. Let me go through your medications. Metoprolol? [Patient: Yes, 25 twice a day.] Lisinopril? [Patient: 5 milligrams in the morning.] Aspirin? [Patient: 325, one a day.] Plavix? [Patient: Yes, 75.] Any blood thinners like warfarin or Eliquis? [Patient: No, just the aspirin and Plavix.] Any allergies? [Patient: Penicillin gives me a rash.] Any other allergies? [Patient: No, just that one.] Okay. I see you had a heart attack back in 2020 and had a stent placed. Any irregular heartbeats? [Patient: Sometimes my heart races but it hasn't happened in a while.] We'll watch for that. Your blood pressure today is 145/88, heart rate 72. Rhythm sounds a bit irregular. No swelling in your legs. We'll need to stop the Plavix five days before surgery."
+}

@@ -1,0 +1,34 @@
+{
+  "note_id": "note-001",
+  "patient": {
+    "id": "patient-12345",
+    "name": "Scott Jackson",
+    "dob": "1958-03-15",
+    "mrn": "MRN-789456"
+  },
+  "encounter": {
+    "id": "encounter-001",
+    "type": "Pre-operative Assessment",
+    "date": "2025-12-24",
+    "provider": "Dr. Jean Raubenheimer"
+  },
+  "ai_scribe_output": {
+    "generated_at": "2025-12-24T10:30:00Z",
+    "model": "cerner-ai-scribe-v1",
+    "sections": {
+      "chief_complaint": "67-year-old male presents for pre-operative assessment prior to scheduled aortic valve replacement.",
+      "history_of_present_illness": "Patient reports progressive dyspnea on exertion over the past 6 months. Denies chest pain at rest. No syncope or presyncope. Able to climb one flight of stairs before becoming short of breath.",
+      "medications": [
+        {"name": "Metoprolol", "dose": "50mg", "route": "PO", "frequency": "BID"},
+        {"name": "Lisinopril", "dose": "10mg", "route": "PO", "frequency": "daily"},
+        {"name": "Aspirin", "dose": "81mg", "route": "PO", "frequency": "daily"},
+        {"name": "Atorvastatin", "dose": "40mg", "route": "PO", "frequency": "daily"}
+      ],
+      "allergies": "No known drug allergies (NKDA)",
+      "cardiac_history": "Moderate aortic stenosis (valve area 1.1 cm²) diagnosed 2 years ago. Hypertension controlled on current regimen. No prior cardiac surgery.",
+      "physical_exam": "BP 132/78, HR 68, SpO2 98% on room air. Regular rate and rhythm. 3/6 systolic ejection murmur at right upper sternal border radiating to carotids.",
+      "assessment_plan": "Patient cleared for AVR from anesthesia standpoint. Will proceed with surgery as scheduled. Recommend continuing beta-blocker perioperatively."
+    }
+  },
+  "source_transcript": "Good morning Mr. Jackson, I'm Dr. Raubenheimer. I see you're here for your pre-op assessment for your aortic valve surgery. How are you feeling today? [Patient: Pretty good, just get a bit winded going up stairs.] How many flights can you climb? [Patient: About one, then I need to rest.] Any chest pain? [Patient: No, not really.] Any passing out or feeling like you might pass out? [Patient: No.] Good. Let me check your medications - you're on metoprolol? [Patient: Yes, 50 twice a day.] And lisinopril? [Patient: Yes, 10 in the morning.] Aspirin? [Patient: The baby aspirin, yes.] Any allergies to medications? [Patient: None that I know of.] Great. Your echo from last month shows moderate aortic stenosis with a valve area of 1.1 cm squared. We'll proceed with the AVR as planned for next Tuesday. Keep taking your metoprolol - that's important around surgery."
+}
