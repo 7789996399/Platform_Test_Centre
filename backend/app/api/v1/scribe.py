@@ -26,7 +26,7 @@ from ...models.scribe import (
 )
 from ...core.routing import analyze_note, format_review_queue_for_display, generate_audit_log
 from ...core.claim_extraction import extract_claims_from_note
-
+from ...core.ehr_verification import verify_note_against_ehr, EHRVerificationStatus
 
 router = APIRouter(prefix="/scribe", tags=["AI Scribe Governance"])
 
@@ -229,3 +229,50 @@ async def health_check():
         version="0.1.0",
         timestamp=datetime.now()
     )
+@router.post("/verify-ehr/{patient_id}")
+async def verify_against_ehr(patient_id: str, note_input: ScribeNoteInput):
+    """
+    Verify AI scribe claims against real Cerner EHR data.
+    
+    This is the TRUST advantage - comparing AI output against
+    the actual medical record, not just the transcript!
+    """
+    try:
+        # Convert input and extract claims
+        note_dict = convert_note_input_to_dict(note_input)
+        claims = extract_claims_from_note(note_dict)
+        
+        # Verify against EHR
+        ehr_result = verify_note_against_ehr(claims, patient_id)
+        
+        if ehr_result["status"] == "error":
+            raise HTTPException(status_code=404, detail=ehr_result["error"])
+        
+        # Format results
+        formatted_results = []
+        for r in ehr_result["results"]:
+            formatted_results.append({
+                "claim_text": r.claim.text,
+                "claim_type": r.claim.claim_type.value,
+                "status": r.status.value,
+                "ehr_match": r.ehr_match,
+                "confidence": r.confidence,
+                "explanation": r.explanation
+            })
+        
+        return {
+            "patient_id": ehr_result["patient_id"],
+            "patient_name": ehr_result["patient_name"],
+            "total_claims": ehr_result["total_claims"],
+            "verified": ehr_result["verified"],
+            "contradicted": ehr_result["contradicted"],
+            "not_in_ehr": ehr_result["not_in_ehr"],
+            "ehr_medications_count": ehr_result["ehr_medications_count"],
+            "ehr_allergies_count": ehr_result["ehr_allergies_count"],
+            "results": formatted_results
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"EHR verification failed: {str(e)}")
