@@ -1,0 +1,39 @@
+# TRUST Platform Backend Dependencies
+
+# Web Framework
+fastapi==0.109.0
+uvicorn==0.27.0
+python-multipart==0.0.6
+
+# Database
+sqlalchemy==2.0.25
+asyncpg==0.29.0
+alembic==1.13.1
+
+# AI/ML
+openai==1.12.0
+transformers==4.37.2
+torch==2.2.0
+sentence-transformers==2.3.1
+
+# NLP for entailment checking
+spacy==3.7.4
+
+# Validation & Typing
+pydantic==2.6.1
+pydantic-settings==2.1.0
+
+# FHIR
+fhir.resources==7.1.0
+
+# Utilities
+python-dotenv==1.0.1
+httpx==0.26.0
+numpy==1.26.4
+pandas==2.2.0
+scipy==1.12.0
+scikit-learn==1.4.0
+
+# Testing
+pytest==8.0.0
+pytest-asyncio==0.23.4
