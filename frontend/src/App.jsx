@@ -6,7 +6,8 @@
 
 import React, { useState } from 'react';
 import TrustDashboard from './components/dashboard/TrustDashboard';
-import { analyzeNote } from './services/api';
+import EHRVerification from './components/dashboard/EHRVerification';
+import { analyzeNote, verifyAgainstEHR } from './services/api';
 
 // TRUST Brand Colors
 const COLORS = {
@@ -57,9 +58,11 @@ const SAMPLE_HALLUCINATED = {
 
 function App() {
   const [analysisResult, setAnalysisResult] = useState(null);
+  const [ehrResult, setEhrResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [selectedSample, setSelectedSample] = useState('clean');
+  
 
   const handleAnalyze = async () => {
     setLoading(true);
@@ -68,7 +71,10 @@ function App() {
     try {
       const noteData = selectedSample === 'clean' ? SAMPLE_NOTE : SAMPLE_HALLUCINATED;
       const result = await analyzeNote(noteData);
-      setAnalysisResult(result);
+      setAnalysisResult(result); 
+      const ehrData = await verifyAgainstEHR('12724066', noteData);
+      setEhrResult (ehrData);
+
     } catch (err) {
       setError(err.message);
       console.error('Analysis failed:', err);
@@ -169,6 +175,7 @@ function App() {
       {/* Main content */}
       <main>
         <TrustDashboard analysisResult={analysisResult} />
+	<EHRVerification ehrResult={ehrResult} />
       </main>
 
       {/* Footer */}

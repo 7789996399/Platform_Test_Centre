@@ -2,7 +2,7 @@
  * TRUST Platform - API Service
  */
 
-const API_BASE_URL = 'http://127.0.0.1:8000/api/v1';
+const API_BASE_URL = 'http://127.0.0.1:8002/api/v1';
 
 export async function analyzeNote(noteData) {
   const response = await fetch(`${API_BASE_URL}/scribe/analyze`, {
@@ -38,5 +38,32 @@ export async function analyzeNoteQuick(noteData) {
 
 export async function checkHealth() {
   const response = await fetch(`${API_BASE_URL}/scribe/health`);
+  return response.json();
+}
+/**
+ * Get patient context from Cerner EHR.
+ */
+export async function getCernerPatient(patientId) {
+  const response = await fetch(`${API_BASE_URL}/cerner/patient/${patientId}`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch patient: ${response.statusText}`);
+  }
+  return response.json();
+}
+
+/**
+ * Verify AI note against real EHR data.
+ */
+export async function verifyAgainstEHR(patientId, noteData) {
+  const response = await fetch(`${API_BASE_URL}/scribe/verify-ehr/${patientId}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(noteData),
+  });
+  if (!response.ok) {
+    throw new Error(`EHR verification failed: ${response.statusText}`);
+  }
   return response.json();
 }
