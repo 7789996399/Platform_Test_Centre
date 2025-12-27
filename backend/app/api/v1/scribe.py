@@ -169,60 +169,8 @@ async def analyze_scribe_note(
         # Convert to response format
         response = convert_analysis_to_response(analysis, note_input)
         
-        # Log to Azure PostgreSQL
-        await log_analysis(
-            db=db,
-            note_id=note_input.note_id,
-            patient_id=note_input.patient_id,
-            results={
-                "confidence_score": response.summary.overall_confidence,
-                "semantic_entropy": response.summary.avg_entropy,
-                "review_recommendation": response.summary.review_recommendation.value,
-                "claims_total": response.summary.total_
-cat > /tmp/analyze_fix.py << 'ENDFIX'
-@router.post("/analyze", response_model=NoteAnalysisResponse)
-async def analyze_scribe_note(
-    note_input: ScribeNoteInput,
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Analyze an AI-generated scribe note for hallucinations and uncertainty.
-    
-    This is the main endpoint that:
-    1. Extracts claims from the note
-    2. Verifies claims against source transcript
-    3. Calculates semantic entropy for unverified claims
-    4. Assigns review tiers based on uncertainty
-    5. Logs to Azure PostgreSQL audit trail
-    6. Returns prioritized review queue
-    """
-    try:
-        # Convert input to internal format
-        note_dict = convert_note_input_to_dict(note_input)
-        transcript = note_input.source_transcript
+ 
         
-        # Run analysis pipeline
-        analysis = analyze_note(note_dict, transcript, run_entropy=True)
-        
-        # Convert to response format
-        response = convert_analysis_to_response(analysis, note_input)
-        
-        # Log to Azure PostgreSQL
-        await log_analysis(
-            db=db,
-            note_id=note_input.note_id,
-            patient_id=note_input.patient_id,
-            results={
-                "confidence_score": response.summary.overall_confidence,
-                "semantic_entropy": response.summary.avg_entropy,
-                "review_recommendation": response.summary.review_recommendation.value,
-                "claims_total": response.summary.total_claims,
-                "verified": response.summary.source_verified,
-                "unverified": response.summary.unverified,
-                "contradicted": response.summary.contradicted,
-                "hallucinations": response.summary.high_risk_flags,
-            }
-        )
         
         return response
         

@@ -13,13 +13,10 @@ import numpy as np
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
+from ..models.scribe import ReviewTier
 
 
-class ReviewTier(Enum):
-    """Tiered review levels based on uncertainty."""
-    BRIEF = "brief"           # <30 seconds - quick glance
-    STANDARD = "standard"     # 1-2 minutes - normal review  
-    DETAILED = "detailed"     # 3-5 minutes - careful verification
+
 
 
 @dataclass
@@ -274,7 +271,15 @@ def calculate_review_burden(results: List[UncertaintyResult]) -> Dict:
         Dict with burden statistics
     """
     if not results:
-        return {"total_claims": 0}
+        return {
+            "total_claims": 0,
+            "brief_review": 0,
+            "standard_review": 0,
+            "detailed_review": 0,
+            "estimated_review_seconds": 0,
+            "time_saved_percent": 0.0,
+            "brief_percent": 0.0,
+        }
     
     tier_counts = {
         ReviewTier.BRIEF: 0,

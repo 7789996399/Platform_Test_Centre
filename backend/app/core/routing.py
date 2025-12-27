@@ -20,9 +20,10 @@ from .claim_extraction import Claim, extract_claims_from_note, ClaimType
 from .source_verification import verify_all_claims, VerificationResult, VerificationStatus
 from .semantic_entropy import EntropyResult, analyze_claim, cluster_by_exact_match, calculate_entropy
 from .uncertainty import (
-    UncertaintyResult, ReviewTier, quantify_uncertainty, 
+    UncertaintyResult, quantify_uncertainty, 
     calculate_review_burden
 )
+from ..models.scribe import ReviewTier
 
 
 @dataclass
