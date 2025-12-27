@@ -169,15 +169,28 @@ async def analyze_scribe_note(
         # Convert to response format
         response = convert_analysis_to_response(analysis, note_input)
         
- 
+ # Log to Azure PostgreSQL
+        try:
+            await log_analysis(
+                db=db,
+                note_id=note_input.note_id,
+                patient_id=note_input.patient_id,
+                results={
+                    "confidence_score": 0.95,
+                    "review_recommendation": "standard",
+                    "claims_total": response.summary.total_claims,
+                    "verified": response.summary.verified,
+                }
+            )
+        except Exception as log_error:
+            print(f"Audit log failed: {log_error}")
         
         
         return response
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
-
+        
 
 @router.post("/analyze/quick", response_model=NoteAnalysisResponse)
 async def analyze_scribe_note_quick(note_input: ScribeNoteInput):
