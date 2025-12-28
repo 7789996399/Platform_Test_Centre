@@ -301,3 +301,27 @@ async def verify_against_ehr(patient_id: str, note_input: ScribeNoteInput):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"EHR verification failed: {str(e)}")
+
+
+@router.get("/audit-logs")
+async def get_audit_logs_endpoint(
+    db: AsyncSession = Depends(get_db),
+    limit: int = 50
+):
+    """Retrieve recent audit logs from Azure PostgreSQL."""
+    from ...services.audit import get_audit_logs
+    
+    logs = await get_audit_logs(db, limit=limit)
+    return [
+        {
+            "id": log.id,
+            "timestamp": log.timestamp.isoformat() if log.timestamp else None,
+            "note_id": log.note_id,
+            "patient_id": log.patient_id,
+            "confidence_score": log.confidence_score,
+            "review_level": log.review_level,
+            "claims_total": log.claims_total,
+            "physician_action": log.physician_action,
+        }
+        for log in logs
+    ]
