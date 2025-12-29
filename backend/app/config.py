@@ -45,8 +45,6 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:5173",
-        "https://wonderful-bush-0689e2b0f.6.azurestaticapps.net",
-        "https://www.trustplatform.ca",
     ]
     
     class Config:
