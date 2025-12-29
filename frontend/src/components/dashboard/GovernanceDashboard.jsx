@@ -9,7 +9,7 @@ import React, { useState, useEffect } from 'react';
  * Connected to live TRUST backend API for real-time analysis.
  */
 
-const API_BASE_URL = 'http://127.0.0.1:8002/api/v1';
+const API_BASE_URL = 'https://api.trustplatform.ca/api/v1';
 
 // Sample data showing the pipeline in action
 const sampleNote = {

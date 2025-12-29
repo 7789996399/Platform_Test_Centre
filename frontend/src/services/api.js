@@ -2,7 +2,7 @@
  * TRUST Platform - API Service
  */
 
-const API_BASE_URL = 'http://127.0.0.1:8002/api/v1';
+const API_BASE_URL = 'https://api.trustplatform.ca/api/v1';
 
 export async function analyzeNote(noteData) {
   const response = await fetch(`${API_BASE_URL}/scribe/analyze`, {

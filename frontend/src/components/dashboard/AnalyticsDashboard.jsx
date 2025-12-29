@@ -5,7 +5,7 @@ import {
   BarChart, Bar, AreaChart, Area
 } from 'recharts';
 
-const API_BASE_URL = 'http://127.0.0.1:8002/api/v1';
+const API_BASE_URL = 'https://api.trustplatform.ca/api/v1';
 
 // TRUST Brand Colors
 const COLORS = {
