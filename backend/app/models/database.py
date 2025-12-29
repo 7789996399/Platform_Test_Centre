@@ -82,3 +82,28 @@ class ComplianceCheck(Base):
     score = Column(Float)
     passed = Column(Boolean)
     findings = Column(JSON)
+
+
+class UserActivityLog(Base):
+    """Audit trail for user authentication and activity."""
+    __tablename__ = "user_activity_logs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # User info
+    user_id = Column(String(255), index=True)
+    user_email = Column(String(255), index=True)
+    user_name = Column(String(255))
+    
+    # Action details
+    action = Column(String(50), nullable=False, index=True)  # LOGIN, LOGOUT, VIEW, APPROVE, REJECT, etc.
+    resource_type = Column(String(50))  # dashboard, document, settings
+    resource_id = Column(String(255))
+    
+    # Request info
+    ip_address = Column(String(45))
+    user_agent = Column(Text)
+    
+    # Additional details (JSON)
+    details = Column(JSON)

@@ -67,3 +67,34 @@ export async function verifyAgainstEHR(patientId, noteData) {
   }
   return response.json();
 }
+
+/**
+ * Audit Logging Functions
+ */
+
+export async function logAuditEvent(eventData) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/audit/log`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(eventData),
+    });
+    return response.json();
+  } catch (error) {
+    console.error('Audit log failed:', error);
+    // Don't throw - audit logging shouldn't break the app
+  }
+}
+
+export async function getAuditLogs(filters = {}) {
+  const params = new URLSearchParams(filters);
+  const response = await fetch(`${API_BASE_URL}/audit/logs?${params}`);
+  return response.json();
+}
+
+export async function getAuditSummary(days = 7) {
+  const response = await fetch(`${API_BASE_URL}/audit/summary?days=${days}`);
+  return response.json();
+}
