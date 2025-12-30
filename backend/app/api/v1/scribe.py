@@ -164,7 +164,7 @@ async def analyze_scribe_note(
         transcript = note_input.source_transcript
         
         # Run analysis pipeline
-        analysis = analyze_note(note_dict, transcript, run_entropy=True)
+        analysis = await analyze_note(note_dict, transcript, run_entropy=True)
         
         # Convert to response format
         response = convert_analysis_to_response(analysis, note_input)
@@ -205,7 +205,7 @@ async def analyze_scribe_note_quick(note_input: ScribeNoteInput):
         transcript = note_input.source_transcript
         
         # Run without entropy (much faster)
-        analysis = analyze_note(note_dict, transcript, run_entropy=False)
+        analysis = await analyze_note(note_dict, transcript, run_entropy=False)
         
         response = convert_analysis_to_response(analysis, note_input)
         
@@ -230,7 +230,7 @@ async def create_audit_log(note_input: ScribeNoteInput):
         note_dict = convert_note_input_to_dict(note_input)
         transcript = note_input.source_transcript
         
-        analysis = analyze_note(note_dict, transcript, run_entropy=True)
+        analysis = await analyze_note(note_dict, transcript, run_entropy=True)
         audit = generate_audit_log(analysis)
         
         return AuditLogResponse(

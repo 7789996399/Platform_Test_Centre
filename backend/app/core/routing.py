@@ -6,7 +6,7 @@ Integrates Paper 1 + Paper 2 into unified governance pipeline.
 This is the "orchestrator" that:
 1. Extracts claims from AI note
 2. Runs source verification (fast)
-3. Runs semantic entropy on unverified claims (expensive)
+3. Runs semantic entropy on unverified claims (via ML service)
 4. Calculates uncertainty and assigns review tiers
 5. Returns prioritized review queue for physician
 """
@@ -15,15 +15,17 @@ from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 import json
+import httpx
+import os
 
 from .claim_extraction import Claim, extract_claims_from_note, ClaimType
 from .source_verification import verify_all_claims, VerificationResult, VerificationStatus
-from .semantic_entropy import EntropyResult, analyze_claim, cluster_by_exact_match, calculate_entropy
-from .uncertainty import (
-    UncertaintyResult, quantify_uncertainty, 
-    calculate_review_burden
-)
+from .semantic_entropy import EntropyResult
+from .uncertainty import UncertaintyResult, calculate_review_burden
 from ..models.scribe import ReviewTier
+
+# ML Service URL
+ML_SERVICE_URL = os.getenv("ML_SERVICE_URL", "https://trust-ml-service.azurewebsites.net")
 
 
 @dataclass
@@ -33,8 +35,8 @@ class ClaimAnalysis:
     verification: VerificationResult
     entropy: Optional[EntropyResult]
     uncertainty: UncertaintyResult
-    priority_score: float  # Higher = needs more attention
-    
+    priority_score: float
+
 
 @dataclass  
 class NoteAnalysis:
@@ -44,11 +46,49 @@ class NoteAnalysis:
     analyzed_at: datetime
     total_claims: int
     claim_analyses: List[ClaimAnalysis]
-    review_queue: List[ClaimAnalysis]  # Sorted by priority
+    review_queue: List[ClaimAnalysis]
     summary: Dict
     review_burden: Dict
-    overall_risk: str  # LOW, MEDIUM, HIGH
+    overall_risk: str
 
+
+# =============================================================
+# ML SERVICE CALLS
+# =============================================================
+
+async def call_ml_service_entropy(text: str, num_samples: int = 5) -> dict:
+    """Call ML microservice for real semantic entropy calculation."""
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                f"{ML_SERVICE_URL}/analyze/semantic-entropy",
+                json={"text": text, "num_samples": num_samples}
+            )
+            response.raise_for_status()
+            return response.json()
+    except Exception as e:
+        print(f"ML service entropy error: {e}")
+        return {"entropy": 0.5, "confidence": 0.5, "error": str(e)}
+
+
+async def call_ml_service_uncertainty(text: str) -> dict:
+    """Call ML microservice for calibrated uncertainty."""
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                f"{ML_SERVICE_URL}/analyze/uncertainty",
+                json={"text": text, "method": "calibrated"}
+            )
+            response.raise_for_status()
+            return response.json()
+    except Exception as e:
+        print(f"ML service uncertainty error: {e}")
+        return {"uncertainty": 0.5, "calibrated_confidence": 0.5, "error": str(e)}
+
+
+# =============================================================
+# SCORING FUNCTIONS
+# =============================================================
 
 def calculate_priority_score(
     verification: VerificationResult,
@@ -57,20 +97,13 @@ def calculate_priority_score(
 ) -> float:
     """
     Calculate priority score for review queue ordering.
-    
     Higher score = needs physician attention sooner.
-    
-    Factors:
-    - Contradicted claims: highest priority
-    - High entropy: hallucination risk
-    - Low confidence: uncertainty
-    - High-risk claim types: medications, allergies
     """
     score = 0.0
     
     # Verification status
     if verification.status == VerificationStatus.CONTRADICTED:
-        score += 50  # Top priority!
+        score += 50
     elif verification.status == VerificationStatus.NOT_FOUND:
         score += 30
     elif verification.status == VerificationStatus.PARTIAL:
@@ -78,7 +111,7 @@ def calculate_priority_score(
     
     # Entropy (if calculated)
     if entropy:
-        score += entropy.entropy * 15  # 0-2+ range
+        score += entropy.entropy * 15
     
     # Uncertainty
     score += (1 - uncertainty.calibrated_confidence) * 20
@@ -104,19 +137,16 @@ def determine_overall_risk(claim_analyses: List[ClaimAnalysis]) -> str:
     if not claim_analyses:
         return "LOW"
     
-    # Any contradictions = HIGH risk
     contradictions = [ca for ca in claim_analyses 
                       if ca.verification.status == VerificationStatus.CONTRADICTED]
     if contradictions:
         return "HIGH"
     
-    # Multiple high-entropy claims = HIGH risk
     high_entropy = [ca for ca in claim_analyses 
                     if ca.entropy and ca.entropy.risk_level == "HIGH"]
     if len(high_entropy) >= 2:
         return "HIGH"
     
-    # Any single high-entropy OR multiple unverified = MEDIUM
     unverified = [ca for ca in claim_analyses
                   if ca.verification.status == VerificationStatus.NOT_FOUND]
     if high_entropy or len(unverified) >= 3:
@@ -125,7 +155,11 @@ def determine_overall_risk(claim_analyses: List[ClaimAnalysis]) -> str:
     return "LOW"
 
 
-def analyze_note(
+# =============================================================
+# MAIN ANALYSIS PIPELINE
+# =============================================================
+
+async def analyze_note(
     note: Dict,
     transcript: str,
     run_entropy: bool = True,
@@ -133,15 +167,7 @@ def analyze_note(
 ) -> NoteAnalysis:
     """
     Main entry point: Full analysis pipeline for an AI-generated note.
-    
-    Args:
-        note: Parsed AI scribe note (JSON structure)
-        transcript: Source transcript text
-        run_entropy: Whether to run semantic entropy (expensive)
-        mock_responses: For testing - pre-generated responses per claim
-        
-    Returns:
-        Complete NoteAnalysis with prioritized review queue
+    Now calls ML microservice for real entropy and uncertainty.
     """
     # Step 1: Extract claims
     claims = extract_claims_from_note(note)
@@ -155,35 +181,47 @@ def analyze_note(
     for result in verification_results['results']:
         claim = result.claim
         
-        # Step 3a: Semantic entropy (only for unverified claims)
+        # Step 3a: Semantic entropy via ML service (only for unverified claims)
         entropy_result = None
         if run_entropy and result.needs_entropy_check:
-            # In production, we'd generate multiple LLM responses here
-            # For now, use mock responses or simple clustering
-            if mock_responses and claim.id in mock_responses:
-                responses = mock_responses[claim.id]
-            else:
-                # Placeholder: single response = 1 cluster = 0 entropy
-                responses = [claim.text]
+            ml_entropy = await call_ml_service_entropy(claim.text, num_samples=5)
+            entropy_val = ml_entropy.get("entropy", 0.5)
             
-            clusters = cluster_by_exact_match(responses)
-            cluster_sizes = [len(c) for c in clusters]
-            entropy_val = calculate_entropy(cluster_sizes, len(responses))
+            if entropy_val < 0.3:
+                risk_level = "LOW"
+            elif entropy_val < 0.7:
+                risk_level = "MEDIUM"
+            else:
+                risk_level = "HIGH"
             
             entropy_result = EntropyResult(
                 entropy=entropy_val,
-                n_clusters=len(clusters),
-                n_responses=len(responses),
-                cluster_sizes=cluster_sizes,
-                risk_level="LOW" if entropy_val < 0.5 else "MEDIUM" if entropy_val < 1.0 else "HIGH"
+                n_clusters=ml_entropy.get("n_clusters", 1),
+                n_responses=ml_entropy.get("num_samples", 5),
+                cluster_sizes=[1],
+                risk_level=risk_level
             )
         
-        # Step 3b: Uncertainty quantification
-        uncertainty_result = quantify_uncertainty(
-            claim=claim.text,
-            claim_type=claim.claim_type.value,
-            responses=[claim.text],  # Simplified for now
-            entropy=entropy_result.entropy if entropy_result else 0.0
+        # Step 3b: Uncertainty via ML service
+        ml_uncertainty = await call_ml_service_uncertainty(claim.text)
+        calibrated_conf = ml_uncertainty.get("calibrated_confidence", 0.5)
+        
+        if calibrated_conf >= 0.8:
+            review_tier = ReviewTier.BRIEF
+        elif calibrated_conf >= 0.5:
+            review_tier = ReviewTier.STANDARD
+        else:
+            review_tier = ReviewTier.DETAILED
+        
+        interpretation = ml_uncertainty.get("details", {}).get("interpretation", "")
+        flags = [interpretation.split(" - ")[0]] if interpretation else []
+        
+        uncertainty_result = UncertaintyResult(
+            confidence=calibrated_conf,
+            consistency=1.0,
+            calibrated_confidence=calibrated_conf,
+            review_tier=review_tier,
+            flags=flags
         )
         
         # Step 3c: Calculate priority
@@ -227,13 +265,15 @@ def analyze_note(
     )
 
 
+# =============================================================
+# OUTPUT FORMATTING
+# =============================================================
+
 def format_review_queue_for_display(analysis: NoteAnalysis) -> List[Dict]:
-    """
-    Format review queue for frontend display.
-    """
+    """Format review queue for frontend display."""
     display_items = []
     
-    for i, ca in enumerate(analysis.review_queue[:20]):  # Top 20
+    for i, ca in enumerate(analysis.review_queue[:20]):
         display_items.append({
             "rank": i + 1,
             "claim_text": ca.claim.text,
@@ -253,11 +293,7 @@ def format_review_queue_for_display(analysis: NoteAnalysis) -> List[Dict]:
 
 
 def generate_audit_log(analysis: NoteAnalysis) -> Dict:
-    """
-    Generate audit log entry for compliance.
-    
-    Required for FDA GMLP, EU AI Act, Health Canada compliance.
-    """
+    """Generate audit log entry for compliance."""
     return {
         "timestamp": analysis.analyzed_at.isoformat(),
         "note_id": analysis.note_id,
