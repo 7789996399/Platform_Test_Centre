@@ -248,13 +248,14 @@ const TrustMiniLogo = ({ size = 24 }) => (
     <path d="M13 52 L16 55 L22 48" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
   </svg>
 );
-// TRUST ML Analysis Panel Component
-const TRUSTAnalysisPanel = ({ analysis, loading }) => {
+// TRUST ML Analysis Panel Component - Compact & Non-disruptive
+const TRUSTAnalysisPanel = ({ analysis, loading, onClose }) => {
+  const [expanded, setExpanded] = useState(false);
+  
   if (loading) {
     return (
-      <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>
-        <div style={{ marginBottom: '8px' }}>🔄 Running TRUST Analysis...</div>
-        <div style={{ fontSize: '11px' }}>Semantic Entropy + Uncertainty Quantification</div>
+      <div style={{ padding: '8px 16px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', fontSize: '11px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <span>⏳</span> Running TRUST Analysis...
       </div>
     );
   }
@@ -263,136 +264,110 @@ const TRUSTAnalysisPanel = ({ analysis, loading }) => {
   
   const getRiskColor = (risk) => {
     switch (risk) {
-      case 'HIGH': return '#ef4444';
-      case 'MEDIUM': return '#f59e0b';
-      case 'LOW': return '#10b981';
-      default: return '#64748b';
+      case 'HIGH': return { bg: '#fee2e2', text: '#991b1b' };
+      case 'MEDIUM': return { bg: '#fef3c7', text: '#92400e' };
+      case 'LOW': return { bg: '#dcfce7', text: '#166534' };
+      default: return { bg: '#f1f5f9', text: '#475569' };
     }
   };
   
-  const getReviewTierStyle = (tier) => {
-    switch (tier) {
-      case 'brief': return { bg: '#dcfce7', color: '#166534' };
-      case 'standard': return { bg: '#fef3c7', color: '#92400e' };
-      case 'detailed': return { bg: '#fee2e2', color: '#991b1b' };
-      default: return { bg: '#f1f5f9', color: '#475569' };
-    }
-  };
+  const riskStyle = getRiskColor(analysis.overall_risk);
 
+  // Compact summary bar (always visible)
+  if (!expanded) {
+    return (
+      <div style={{ 
+        padding: '8px 16px', 
+        background: riskStyle.bg, 
+        borderTop: '2px solid #8b5cf6',
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'space-between',
+        fontSize: '11px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <span style={{ fontWeight: '600', color: '#8b5cf6' }}>TRUST Analysis</span>
+          <span style={{ padding: '2px 8px', borderRadius: '4px', background: riskStyle.text, color: 'white', fontWeight: '600', fontSize: '10px' }}>
+            {analysis.overall_risk} RISK
+          </span>
+          <span>{analysis.summary.total_claims} claims | {analysis.summary.verified} verified | {analysis.summary.contradictions} contradictions</span>
+          <span style={{ color: '#166534', fontWeight: '600' }}>{analysis.review_burden.time_saved_percent}% time saved</span>
+        </div>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button 
+            onClick={() => setExpanded(true)}
+            style={{ background: 'transparent', border: '1px solid #8b5cf6', color: '#8b5cf6', padding: '2px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '10px' }}
+          >
+            Details ▼
+          </button>
+          <button 
+            onClick={onClose}
+            style={{ background: 'transparent', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '14px' }}
+          >
+            ×
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Expanded view (only when user clicks Details)
   return (
     <div style={{ borderTop: '2px solid #8b5cf6', background: '#faf5ff' }}>
-      <div style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontWeight: '600', color: '#8b5cf6' }}>TRUST ML Analysis</span>
-            <span style={{ 
-              padding: '2px 8px', 
-              borderRadius: '4px', 
-              fontSize: '10px', 
-              fontWeight: '600',
-              background: getRiskColor(analysis.overall_risk),
-              color: 'white'
-            }}>
-              {analysis.overall_risk} RISK
-            </span>
-          </div>
-          <span style={{ fontSize: '11px', color: '#64748b' }}>
-            Analyzed: {new Date(analysis.analyzed_at).toLocaleTimeString()}
+      <div style={{ padding: '8px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontWeight: '600', color: '#8b5cf6' }}>TRUST ML Analysis</span>
+          <span style={{ padding: '2px 8px', borderRadius: '4px', background: riskStyle.text, color: 'white', fontWeight: '600', fontSize: '10px' }}>
+            {analysis.overall_risk} RISK
           </span>
         </div>
-        
-        {/* Summary Stats */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', marginBottom: '12px' }}>
-          <div style={{ background: 'white', padding: '10px', borderRadius: '6px', textAlign: 'center', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '20px', fontWeight: '700', color: '#475569' }}>{analysis.summary.total_claims}</div>
-            <div style={{ fontSize: '10px', color: '#64748b' }}>Total Claims</div>
-          </div>
-          <div style={{ background: '#dcfce7', padding: '10px', borderRadius: '6px', textAlign: 'center' }}>
-            <div style={{ fontSize: '20px', fontWeight: '700', color: '#166534' }}>{analysis.summary.verified}</div>
-            <div style={{ fontSize: '10px', color: '#166534' }}>Verified</div>
-          </div>
-          <div style={{ background: '#fef3c7', padding: '10px', borderRadius: '6px', textAlign: 'center' }}>
-            <div style={{ fontSize: '20px', fontWeight: '700', color: '#92400e' }}>{analysis.summary.needs_review}</div>
-            <div style={{ fontSize: '10px', color: '#92400e' }}>Needs Review</div>
-          </div>
-          <div style={{ background: '#fee2e2', padding: '10px', borderRadius: '6px', textAlign: 'center' }}>
-            <div style={{ fontSize: '20px', fontWeight: '700', color: '#991b1b' }}>{analysis.summary.contradictions}</div>
-            <div style={{ fontSize: '10px', color: '#991b1b' }}>Contradictions</div>
-          </div>
-          <div style={{ background: '#dbeafe', padding: '10px', borderRadius: '6px', textAlign: 'center' }}>
-            <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e40af' }}>{analysis.review_burden.time_saved_percent}%</div>
-            <div style={{ fontSize: '10px', color: '#1e40af' }}>Time Saved</div>
-          </div>
-        </div>
-
-        {/* Review Burden */}
-        <div style={{ display: 'flex', gap: '16px', fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>
-          <span>Review Burden: <strong>{analysis.review_burden.brief_review}</strong> Brief | <strong>{analysis.review_burden.standard_review}</strong> Standard | <strong>{analysis.review_burden.detailed_review}</strong> Detailed</span>
-          <span>|</span>
-          <span>Est. Review Time: <strong>{analysis.review_burden.estimated_review_seconds}s</strong></span>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button 
+            onClick={() => setExpanded(false)}
+            style={{ background: 'transparent', border: '1px solid #8b5cf6', color: '#8b5cf6', padding: '2px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '10px' }}
+          >
+            Collapse ▲
+          </button>
+          <button 
+            onClick={onClose}
+            style={{ background: 'transparent', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '14px' }}
+          >
+            ×
+          </button>
         </div>
       </div>
       
-      {/* Review Queue */}
+      {/* Summary Stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px', padding: '12px 16px' }}>
+        <div style={{ background: 'white', padding: '8px', borderRadius: '4px', textAlign: 'center', border: '1px solid #e2e8f0' }}>
+          <div style={{ fontSize: '18px', fontWeight: '700', color: '#475569' }}>{analysis.summary.total_claims}</div>
+          <div style={{ fontSize: '9px', color: '#64748b' }}>Claims</div>
+        </div>
+        <div style={{ background: '#dcfce7', padding: '8px', borderRadius: '4px', textAlign: 'center' }}>
+          <div style={{ fontSize: '18px', fontWeight: '700', color: '#166534' }}>{analysis.summary.verified}</div>
+          <div style={{ fontSize: '9px', color: '#166534' }}>Verified</div>
+        </div>
+        <div style={{ background: '#fef3c7', padding: '8px', borderRadius: '4px', textAlign: 'center' }}>
+          <div style={{ fontSize: '18px', fontWeight: '700', color: '#92400e' }}>{analysis.summary.needs_review}</div>
+          <div style={{ fontSize: '9px', color: '#92400e' }}>Review</div>
+        </div>
+        <div style={{ background: '#fee2e2', padding: '8px', borderRadius: '4px', textAlign: 'center' }}>
+          <div style={{ fontSize: '18px', fontWeight: '700', color: '#991b1b' }}>{analysis.summary.contradictions}</div>
+          <div style={{ fontSize: '9px', color: '#991b1b' }}>Contradict</div>
+        </div>
+        <div style={{ background: '#dbeafe', padding: '8px', borderRadius: '4px', textAlign: 'center' }}>
+          <div style={{ fontSize: '18px', fontWeight: '700', color: '#1e40af' }}>{analysis.review_burden.time_saved_percent}%</div>
+          <div style={{ fontSize: '9px', color: '#1e40af' }}>Saved</div>
+        </div>
+      </div>
+
+      {/* Review Queue - Compact */}
       {analysis.review_queue && analysis.review_queue.length > 0 && (
-        <div style={{ maxHeight: '200px', overflow: 'auto' }}>
-          <div style={{ padding: '8px 16px', background: '#f1f5f9', fontWeight: '600', fontSize: '11px', color: '#475569' }}>
-            Prioritized Review Queue
-          </div>
-          {analysis.review_queue.map((item, idx) => (
-            <div 
-              key={idx}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '8px 16px',
-                borderBottom: '1px solid #f1f5f9',
-                background: item.verification.status === 'contradicted' ? '#fef2f2' : 
-                           item.verification.status === 'not_found' ? '#fffbeb' : 'white',
-                borderLeft: `3px solid ${
-                  item.verification.status === 'contradicted' ? '#ef4444' :
-                  item.verification.status === 'not_found' ? '#f59e0b' : '#10b981'
-                }`
-              }}
-            >
-              <div style={{ flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ 
-                    background: '#e2e8f0', 
-                    padding: '1px 6px', 
-                    borderRadius: '4px', 
-                    fontSize: '10px',
-                    fontWeight: '600'
-                  }}>
-                    #{item.rank}
-                  </span>
-                  <span style={{ fontWeight: '500', fontSize: '12px' }}>{item.claim.text}</span>
-                </div>
-                <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>
-                  {item.claim.claim_type} | {item.verification.explanation}
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {item.entropy && (
-                  <span style={{ fontSize: '10px', color: '#64748b' }}>
-                    SE: {item.entropy.entropy.toFixed(2)}
-                  </span>
-                )}
-                <span style={{ fontSize: '10px', color: '#64748b' }}>
-                  Conf: {(item.uncertainty.calibrated_confidence * 100).toFixed(0)}%
-                </span>
-                <span style={{
-                  padding: '2px 8px',
-                  borderRadius: '4px',
-                  fontSize: '10px',
-                  fontWeight: '600',
-                  background: getReviewTierStyle(item.uncertainty.review_tier).bg,
-                  color: getReviewTierStyle(item.uncertainty.review_tier).color
-                }}>
-                  {item.uncertainty.review_tier.toUpperCase()}
-                </span>
-              </div>
+        <div style={{ maxHeight: '120px', overflow: 'auto', borderTop: '1px solid #e2e8f0' }}>
+          {analysis.review_queue.slice(0, 5).map((item, idx) => (
+            <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 16px', fontSize: '11px', borderBottom: '1px solid #f1f5f9' }}>
+              <span><strong>#{item.rank}</strong> {item.claim.text}</span>
+              <span style={{ color: '#64748b' }}>{item.uncertainty.review_tier.toUpperCase()}</span>
             </div>
           ))}
         </div>
@@ -987,7 +962,7 @@ const [trustAnalysis, setTrustAnalysis] = useState(null);
                   </button>
                 </div>
               </div>
-              <TRUSTAnalysisPanel analysis={trustAnalysis} loading={ehrLoading} />
+              <TRUSTAnalysisPanel analysis={trustAnalysis} loading={ehrLoading} onClose={() => setTrustAnalysis(null)} />
               {/* EHR Verification Panel */}
               <EHRVerificationPanel ehrResult={ehrResult} loading={ehrLoading} />
             </div>
