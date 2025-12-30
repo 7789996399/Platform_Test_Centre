@@ -45,7 +45,10 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:5173",
+        "https://www.trustplatform.ca",
+        "https://trustplatform.ca",
     ]
+    
     
     class Config:
         env_file = ".env"

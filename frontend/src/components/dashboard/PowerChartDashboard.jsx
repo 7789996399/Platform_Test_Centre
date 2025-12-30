@@ -248,7 +248,158 @@ const TrustMiniLogo = ({ size = 24 }) => (
     <path d="M13 52 L16 55 L22 48" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
   </svg>
 );
+// TRUST ML Analysis Panel Component
+const TRUSTAnalysisPanel = ({ analysis, loading }) => {
+  if (loading) {
+    return (
+      <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>
+        <div style={{ marginBottom: '8px' }}>🔄 Running TRUST Analysis...</div>
+        <div style={{ fontSize: '11px' }}>Semantic Entropy + Uncertainty Quantification</div>
+      </div>
+    );
+  }
+  
+  if (!analysis) return null;
+  
+  const getRiskColor = (risk) => {
+    switch (risk) {
+      case 'HIGH': return '#ef4444';
+      case 'MEDIUM': return '#f59e0b';
+      case 'LOW': return '#10b981';
+      default: return '#64748b';
+    }
+  };
+  
+  const getReviewTierStyle = (tier) => {
+    switch (tier) {
+      case 'brief': return { bg: '#dcfce7', color: '#166534' };
+      case 'standard': return { bg: '#fef3c7', color: '#92400e' };
+      case 'detailed': return { bg: '#fee2e2', color: '#991b1b' };
+      default: return { bg: '#f1f5f9', color: '#475569' };
+    }
+  };
 
+  return (
+    <div style={{ borderTop: '2px solid #8b5cf6', background: '#faf5ff' }}>
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontWeight: '600', color: '#8b5cf6' }}>TRUST ML Analysis</span>
+            <span style={{ 
+              padding: '2px 8px', 
+              borderRadius: '4px', 
+              fontSize: '10px', 
+              fontWeight: '600',
+              background: getRiskColor(analysis.overall_risk),
+              color: 'white'
+            }}>
+              {analysis.overall_risk} RISK
+            </span>
+          </div>
+          <span style={{ fontSize: '11px', color: '#64748b' }}>
+            Analyzed: {new Date(analysis.analyzed_at).toLocaleTimeString()}
+          </span>
+        </div>
+        
+        {/* Summary Stats */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', marginBottom: '12px' }}>
+          <div style={{ background: 'white', padding: '10px', borderRadius: '6px', textAlign: 'center', border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: '20px', fontWeight: '700', color: '#475569' }}>{analysis.summary.total_claims}</div>
+            <div style={{ fontSize: '10px', color: '#64748b' }}>Total Claims</div>
+          </div>
+          <div style={{ background: '#dcfce7', padding: '10px', borderRadius: '6px', textAlign: 'center' }}>
+            <div style={{ fontSize: '20px', fontWeight: '700', color: '#166534' }}>{analysis.summary.verified}</div>
+            <div style={{ fontSize: '10px', color: '#166534' }}>Verified</div>
+          </div>
+          <div style={{ background: '#fef3c7', padding: '10px', borderRadius: '6px', textAlign: 'center' }}>
+            <div style={{ fontSize: '20px', fontWeight: '700', color: '#92400e' }}>{analysis.summary.needs_review}</div>
+            <div style={{ fontSize: '10px', color: '#92400e' }}>Needs Review</div>
+          </div>
+          <div style={{ background: '#fee2e2', padding: '10px', borderRadius: '6px', textAlign: 'center' }}>
+            <div style={{ fontSize: '20px', fontWeight: '700', color: '#991b1b' }}>{analysis.summary.contradictions}</div>
+            <div style={{ fontSize: '10px', color: '#991b1b' }}>Contradictions</div>
+          </div>
+          <div style={{ background: '#dbeafe', padding: '10px', borderRadius: '6px', textAlign: 'center' }}>
+            <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e40af' }}>{analysis.review_burden.time_saved_percent}%</div>
+            <div style={{ fontSize: '10px', color: '#1e40af' }}>Time Saved</div>
+          </div>
+        </div>
+
+        {/* Review Burden */}
+        <div style={{ display: 'flex', gap: '16px', fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>
+          <span>Review Burden: <strong>{analysis.review_burden.brief_review}</strong> Brief | <strong>{analysis.review_burden.standard_review}</strong> Standard | <strong>{analysis.review_burden.detailed_review}</strong> Detailed</span>
+          <span>|</span>
+          <span>Est. Review Time: <strong>{analysis.review_burden.estimated_review_seconds}s</strong></span>
+        </div>
+      </div>
+      
+      {/* Review Queue */}
+      {analysis.review_queue && analysis.review_queue.length > 0 && (
+        <div style={{ maxHeight: '200px', overflow: 'auto' }}>
+          <div style={{ padding: '8px 16px', background: '#f1f5f9', fontWeight: '600', fontSize: '11px', color: '#475569' }}>
+            Prioritized Review Queue
+          </div>
+          {analysis.review_queue.map((item, idx) => (
+            <div 
+              key={idx}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '8px 16px',
+                borderBottom: '1px solid #f1f5f9',
+                background: item.verification.status === 'contradicted' ? '#fef2f2' : 
+                           item.verification.status === 'not_found' ? '#fffbeb' : 'white',
+                borderLeft: `3px solid ${
+                  item.verification.status === 'contradicted' ? '#ef4444' :
+                  item.verification.status === 'not_found' ? '#f59e0b' : '#10b981'
+                }`
+              }}
+            >
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ 
+                    background: '#e2e8f0', 
+                    padding: '1px 6px', 
+                    borderRadius: '4px', 
+                    fontSize: '10px',
+                    fontWeight: '600'
+                  }}>
+                    #{item.rank}
+                  </span>
+                  <span style={{ fontWeight: '500', fontSize: '12px' }}>{item.claim.text}</span>
+                </div>
+                <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>
+                  {item.claim.claim_type} | {item.verification.explanation}
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {item.entropy && (
+                  <span style={{ fontSize: '10px', color: '#64748b' }}>
+                    SE: {item.entropy.entropy.toFixed(2)}
+                  </span>
+                )}
+                <span style={{ fontSize: '10px', color: '#64748b' }}>
+                  Conf: {(item.uncertainty.calibrated_confidence * 100).toFixed(0)}%
+                </span>
+                <span style={{
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  fontSize: '10px',
+                  fontWeight: '600',
+                  background: getReviewTierStyle(item.uncertainty.review_tier).bg,
+                  color: getReviewTierStyle(item.uncertainty.review_tier).color
+                }}>
+                  {item.uncertainty.review_tier.toUpperCase()}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 // EHR Verification Panel Component
 const EHRVerificationPanel = ({ ehrResult, loading }) => {
   if (loading) {
@@ -353,26 +504,41 @@ export default function PowerChartDashboard() {
   const toggleSection = (section) => {
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
   };
-
-  // Fetch EHR verification when document is selected
+const [trustAnalysis, setTrustAnalysis] = useState(null);
+// Run TRUST Analysis when document is selected
   const handleSelectDoc = async (doc) => {
     setSelectedDoc(doc);
     setEhrResult(null);
+    setTrustAnalysis(null);
     
-    if (doc.noteData && doc.patientId) {
+    if (doc.noteData) {
       setEhrLoading(true);
       try {
-        const response = await fetch(`${API_BASE_URL}/scribe/verify-ehr/${doc.patientId}`, {
+        // Run TRUST ML Analysis
+        const analysisResponse = await fetch(`${API_BASE_URL}/scribe/analyze`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(doc.noteData),
         });
-        if (response.ok) {
-          const data = await response.json();
-          setEhrResult(data);
+        if (analysisResponse.ok) {
+          const analysisData = await analysisResponse.json();
+          setTrustAnalysis(analysisData);
+        }
+        
+        // Also run EHR verification
+        if (doc.patientId) {
+          const ehrResponse = await fetch(`${API_BASE_URL}/scribe/verify-ehr/${doc.patientId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(doc.noteData),
+          });
+          if (ehrResponse.ok) {
+            const ehrData = await ehrResponse.json();
+            setEhrResult(ehrData);
+          }
         }
       } catch (err) {
-        console.error('EHR verification failed:', err);
+        console.error('Analysis failed:', err);
       } finally {
         setEhrLoading(false);
       }
@@ -821,7 +987,7 @@ export default function PowerChartDashboard() {
                   </button>
                 </div>
               </div>
-              
+              <TRUSTAnalysisPanel analysis={trustAnalysis} loading={ehrLoading} />
               {/* EHR Verification Panel */}
               <EHRVerificationPanel ehrResult={ehrResult} loading={ehrLoading} />
             </div>
