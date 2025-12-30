@@ -1,0 +1,22 @@
+# TRUST ML Service - Heavy AI Packages
+# Separate from main API for scalability
+
+# Web Framework
+fastapi==0.109.0
+uvicorn==0.27.0
+gunicorn==21.2.0
+
+# ML/AI - CPU version (smaller)
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.2.0+cpu
+transformers==4.37.2
+sentence-transformers==2.3.1
+
+# Core
+numpy==1.26.4
+pydantic==2.6.1
+python-dotenv==1.0.1
+
+# OpenAI for multi-model support
+openai==1.12.0
+httpx==0.26.0
