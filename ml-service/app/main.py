@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
+from .uncertainty import calculate_uncertainty, medical_adjusted_uncertainty
 import os
 
 app = FastAPI(
@@ -146,7 +147,70 @@ async def detect_hallucination(request: HallucinationRequest):
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+# ============== Uncertainty Quantification ==============
 
+class UncertaintyRequest(BaseModel):
+    text: str
+    method: str = "calibrated"  # "ensemble", "token_probability", "calibrated"
+    num_samples: int = 5
+    medical_context: bool = True
+
+class UncertaintyResponse(BaseModel):
+    uncertainty: float
+    calibrated_confidence: float
+    method: str
+    review_level: str
+    details: dict
+
+@app.post("/analyze/uncertainty", response_model=UncertaintyResponse)
+async def analyze_uncertainty(request: UncertaintyRequest):
+    """
+    Calculate calibrated uncertainty for AI-generated text.
+    Based on Paper 2 methodology.
+    
+    Methods:
+    - ensemble: Multiple sample variance (most robust)
+    - token_probability: Linguistic hedging analysis
+    - calibrated: Combined approach with calibration curve
+    """
+    import time
+    start = time.time()
+    
+    try:
+        result = await calculate_uncertainty(
+            text=request.text,
+            method=request.method,
+            num_samples=request.num_samples
+        )
+        
+        # Apply medical adjustment if requested
+        if request.medical_context:
+            result["uncertainty"] = await medical_adjusted_uncertainty(
+                request.text, 
+                result["uncertainty"]
+            )
+            result["calibrated_confidence"] = 1.0 - result["uncertainty"]
+            result["details"]["medical_adjusted"] = True
+        
+        # Determine review level based on uncertainty
+        uncertainty = result["uncertainty"]
+        if uncertainty < 0.2:
+            review_level = "BRIEF"
+        elif uncertainty < 0.4:
+            review_level = "BRIEF"
+        elif uncertainty < 0.6:
+            review_level = "STANDARD"
+        else:
+            review_level = "DETAILED"
+        
+        result["review_level"] = review_level
+        result["details"]["processing_time_ms"] = (time.time() - start) * 1000
+        
+        return result
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
