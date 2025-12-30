@@ -82,3 +82,34 @@ class ComplianceCheck(Base):
     score = Column(Float)
     passed = Column(Boolean)
     findings = Column(JSON)
+
+class MLAnalysisLog(Base):
+    """Audit log for ML service analyses."""
+    __tablename__ = "ml_analysis_logs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Analysis type
+    analysis_type = Column(String(50))  # semantic_entropy, uncertainty, hallucination, embeddings
+    
+    # Input
+    input_text = Column(Text)
+    input_params = Column(JSON)
+    
+    # Results
+    result_score = Column(Float)  # Primary score (entropy, uncertainty, etc.)
+    confidence = Column(Float)
+    review_level = Column(String(20))  # BRIEF, STANDARD, DETAILED
+    
+    # Full response
+    full_response = Column(JSON)
+    
+    # Performance
+    processing_time_ms = Column(Float)
+    ml_service_version = Column(String(20))
+    
+    # Context (optional)
+    user_id = Column(String(100), nullable=True)
+    session_id = Column(String(100), nullable=True)
+    note_id = Column(String(100), nullable=True)   
