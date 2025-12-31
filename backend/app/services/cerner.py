@@ -113,23 +113,67 @@ def get_patient_context(patient_id: str) -> Optional[PatientContext]:
 
 
 def search_patients(count: int = 10) -> List[Dict]:
-    """Search for available test patients."""
-    url = f"{FHIR_BASE_URL}/Patient"
-    params = {"_count": count}
-    response = requests.get(url, headers=HEADERS, params=params)
-    
+    """Search for available test patients using known test IDs."""
+    # Cerner sandbox now requires search parameters
+    # Use known test patient IDs instead
+    test_patient_ids = [
+        "12742400",  # PETERS, TIM
+        "12724066",  # SMART, NANCY
+        "12742399",  # Test patient
+    ]
+
     patients = []
-    if response.status_code == 200:
-        bundle = response.json()
-        for entry in bundle.get("entry", []):
-            p = entry.get("resource", {})
-            name_data = p.get("name", [{}])[0]
+    for pid in test_patient_ids[:count]:
+        patient = get_patient(pid)
+        if patient:
+            name_data = patient.get("name", [{}])[0]
             given = " ".join(name_data.get("given", ["?"]))
             family = name_data.get("family", "?")
             patients.append({
-                "id": p.get("id"),
+                "id": patient.get("id"),
                 "name": f"{given} {family}",
-                "birthDate": p.get("birthDate"),
-                "gender": p.get("gender")
+                "birthDate": patient.get("birthDate"),
+                "gender": patient.get("gender")
             })
-    return patients
+    return patients 
+
+
+# =============================================================================
+# DOCUMENT REFERENCE FUNCTIONS (Clinical Notes)
+# =============================================================================
+
+def get_document_references(
+    patient_id: Optional[str] = None,
+    count: int = 10
+) -> List[Dict]:
+    """
+    Fetch DocumentReference resources (clinical notes) from Cerner.
+    
+    These contain AI scribe notes, discharge summaries, etc.
+    """
+    url = f"{FHIR_BASE_URL}/DocumentReference"
+    params = {"_count": count}
+    
+    if patient_id:
+        params["patient"] = patient_id
+    
+    response = requests.get(url, headers=HEADERS, params=params)
+    
+    documents = []
+    if response.status_code == 200:
+        bundle = response.json()
+        for entry in bundle.get("entry", []):
+            doc = entry.get("resource", {})
+            documents.append(doc)
+    
+    return documents
+
+
+def get_document_by_id(document_id: str) -> Optional[Dict]:
+    """Fetch a specific DocumentReference by ID."""
+    url = f"{FHIR_BASE_URL}/DocumentReference/{document_id}"
+    response = requests.get(url, headers=HEADERS)
+    
+    if response.status_code == 200:
+        return response.json()
+    return None
