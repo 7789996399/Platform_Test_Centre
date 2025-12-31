@@ -1,3 +1,4 @@
+import AIModelReport from './AIModelReport';
 import React, { useState, useEffect } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -179,6 +180,8 @@ const ComplianceCell = ({ value }) => {
 };
 
 export default function AnalyticsDashboard() {
+  const [showModelReport, setShowModelReport] = useState(false);
+  const [selectedModel, setSelectedModel] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [apiStatus, setApiStatus] = useState('checking');
   const [ehrResult, setEhrResult] = useState(null);
@@ -248,6 +251,12 @@ export default function AnalyticsDashboard() {
                 {apiStatus === 'connected' ? 'API Connected' : 'API Offline'}
               </span>
               <span style={{ fontSize: '13px', color: COLORS.slate[700] }}>Raubenheimer, Jean MD</span>
+             <button 
+                onClick={() => setShowModelReport(true)}
+                style={{ padding: '6px 12px', background: COLORS.teal, color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: '600' }}
+              >
+                Generate Model Report
+              </button> 
             </div>
           </div>
         </header>
@@ -440,10 +449,12 @@ export default function AnalyticsDashboard() {
                 { name: 'Clinical Note Assistant', type: 'Generative', accuracy: 93.4, status: 'Active' },
                 { name: 'Mammography AI', type: 'Radiology', accuracy: 89.2, status: 'Review' },
               ].map((model, idx) => (
-                <div key={idx} style={{
-                  background: 'white', borderRadius: '8px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-                  border: model.status === 'Review' ? `1px solid ${COLORS.amber}` : `1px solid ${COLORS.slate[200]}`
-                }}>
+                <div key={idx} onClick={() => { setSelectedModel(model); setShowModelReport(true); }} style={{
+                background: 'white', borderRadius: '8px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                border: model.status === 'Review' ? `1px solid ${COLORS.amber}` : '1px solid #e2e8f0',
+                cursor: 'pointer'
+              }}>
+                
                   <div style={{ marginBottom: '16px' }}>
                     <div style={{ fontWeight: '600', color: COLORS.slate[800], fontSize: '14px' }}>{model.name}</div>
                     <div style={{ fontSize: '11px', color: COLORS.slate[600] }}>{model.type}</div>
@@ -522,6 +533,9 @@ export default function AnalyticsDashboard() {
               </tbody>
             
               </table>
+              {showModelReport && (
+        <AIModelReport model={selectedModel} onClose={() => setShowModelReport(false)} />
+      )}
             </div>
           )}
         </main>
