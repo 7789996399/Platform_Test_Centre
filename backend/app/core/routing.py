@@ -146,6 +146,15 @@ def determine_overall_risk(claim_analyses: List[ClaimAnalysis]) -> str:
     if not claim_analyses:
         return "LOW"
     
+    # CRITICAL: Confident hallucinator (low SE + contradiction)
+    confident_hallucinators = [
+        ca for ca in claim_analyses 
+        if ca.verification.status == VerificationStatus.CONTRADICTED
+        and ca.entropy and ca.entropy.entropy < 0.3
+    ]
+    if confident_hallucinators:
+        return "CRITICAL"
+    
     contradictions = [ca for ca in claim_analyses 
                       if ca.verification.status == VerificationStatus.CONTRADICTED]
     if contradictions:
@@ -258,6 +267,9 @@ async def analyze_note(
         "verified": verification_results['verified'],
         "needs_review": verification_results['needs_entropy_check'],
         "contradictions": verification_results['contradicted'],
+        "confident_hallucinators": len([ca for ca in claim_analyses 
+            if ca.verification.status == VerificationStatus.CONTRADICTED 
+            and ca.entropy and ca.entropy.entropy < 0.3]),
         "compute_saved_percent": verification_results['compute_saved_percent'],
         "high_priority_count": len([ca for ca in claim_analyses if ca.priority_score > 40])
     }
