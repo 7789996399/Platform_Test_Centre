@@ -101,17 +101,26 @@ def calculate_priority_score(
     """
     score = 0.0
     
-    # Verification status
+   # Verification status
     if verification.status == VerificationStatus.CONTRADICTED:
         score += 50
+        
+        # CONFIDENT HALLUCINATOR DETECTION
+        # Low SE + contradiction = AI is confident but WRONG (most dangerous!)
+        if entropy and entropy.entropy < 0.3:
+            score += 100  # CRITICAL: Push to top of queue
+        # High SE + contradiction = transcript was ambiguous (less dangerous)
+        elif entropy and entropy.entropy > 0.7:
+            score += 20  # Still needs review, but AI was uncertain
+            
     elif verification.status == VerificationStatus.NOT_FOUND:
         score += 30
     elif verification.status == VerificationStatus.PARTIAL:
         score += 10
     
-    # Entropy (if calculated)
-    if entropy:
-        score += entropy.entropy * 15
+    # Entropy (if calculated) - for non-contradictions
+    if entropy and verification.status != VerificationStatus.CONTRADICTED:
+        score += entropy.entropy * 15 
     
     # Uncertainty
     score += (1 - uncertainty.calibrated_confidence) * 20
