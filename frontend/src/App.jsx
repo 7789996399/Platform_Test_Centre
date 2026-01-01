@@ -76,9 +76,7 @@ const LandingPage = () => {
             <div style={{ fontSize: '14px', fontWeight: '500', color: COLORS.slate[800] }}>
               {user?.name || 'User'}
             </div>
-            <div style={{ fontSize: '11px', color: COLORS.slate[600] }}>
-              {user?.email || 'Providence Health Care'}
-            </div>
+            
           </div>
           <button
             onClick={logout}
