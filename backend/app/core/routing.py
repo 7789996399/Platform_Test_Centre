@@ -181,9 +181,10 @@ async def analyze_note(
     for result in verification_results['results']:
         claim = result.claim
         
-        # Step 3a: Semantic entropy via ML service (only for unverified claims)
+        # Step 3a: Semantic entropy via ML service (ONLY for EHR contradictions!)
+        # EHR-First approach: SE is expensive, so only run on contradictions
         entropy_result = None
-        if run_entropy and result.needs_entropy_check:
+        if run_entropy and result.status == VerificationStatus.CONTRADICTED:
             ml_entropy = await call_ml_service_entropy(claim.text, num_samples=5)
             entropy_val = ml_entropy.get("entropy", 0.5)
             
