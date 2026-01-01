@@ -18,7 +18,87 @@ const COLORS = {
   trustPurple: '#8b5cf6',
 };
 
-// Sample AI Documents data
+// =============================================================================
+// TIME SAVED CALCULATION LOGIC
+// =============================================================================
+
+// Average time (in seconds) to manually verify each claim type against EHR
+const MANUAL_VERIFICATION_TIME = {
+  medication: 45,      // Check medication list, reconcile
+  allergy: 30,         // Check allergy list
+  vital_sign: 20,      // Check flowsheet
+  lab_result: 40,      // Navigate to labs, find result
+  diagnosis: 60,       // Review problem list
+  procedure: 90,       // Check surgical/procedure history
+  demographic: 15,     // Check patient info
+  default: 35,         // Average for unspecified claim types
+};
+
+// TRUST automated verification time per claim (API call)
+const TRUST_VERIFICATION_TIME_PER_CLAIM = 2; // seconds
+
+/**
+ * Calculate time saved by TRUST automated verification
+ * @param {Array} claims - Array of claim objects with 'type' property
+ * @param {number} contradictions - Number of contradictions found (adds review time)
+ * @returns {Object} { timeSavedPercent, manualTimeSeconds, trustTimeSeconds }
+ */
+const calculateTimeSaved = (claims, contradictions = 0) => {
+  if (!claims || claims.length === 0) {
+    return { timeSavedPercent: 0, manualTimeSeconds: 0, trustTimeSeconds: 0 };
+  }
+  
+  // Calculate total manual verification time
+  const manualTimeSeconds = claims.reduce((total, claim) => {
+    const claimTime = MANUAL_VERIFICATION_TIME[claim.type] || MANUAL_VERIFICATION_TIME.default;
+    return total + claimTime;
+  }, 0);
+  
+  // Calculate TRUST automated time
+  let trustTimeSeconds = claims.length * TRUST_VERIFICATION_TIME_PER_CLAIM;
+  
+  // Add penalty time for each contradiction (requires manual review)
+  const CONTRADICTION_REVIEW_TIME = 60; // seconds to investigate each contradiction
+  trustTimeSeconds += contradictions * CONTRADICTION_REVIEW_TIME;
+  
+  // Calculate percentage saved
+  const timeSavedPercent = Math.max(0, ((manualTimeSeconds - trustTimeSeconds) / manualTimeSeconds) * 100);
+  
+  return {
+    timeSavedPercent: Math.round(timeSavedPercent * 10) / 10, // Round to 1 decimal
+    manualTimeSeconds,
+    trustTimeSeconds
+  };
+};
+
+/**
+ * Determine risk level based on semantic entropy, contradictions, and verification status
+ */
+const calculateRiskLevel = (doc) => {
+  if (!doc.ehrVerification) return { level: 'UNKNOWN', color: '#666' };
+  
+  const { contradictions, unverified } = doc.ehrVerification;
+  const se = doc.semanticEntropy || 0;
+  
+  // HIGH RISK: Any contradiction OR very high SE
+  if (contradictions > 0 || se > 1.0) {
+    return { level: 'HIGH RISK', color: COLORS.trustRed, bgColor: '#fee2e2' };
+  }
+  
+  // MEDIUM RISK: High SE OR many unverified claims
+  if (se > 0.5 || unverified > 2) {
+    return { level: 'MEDIUM RISK', color: COLORS.trustAmber, bgColor: '#fef3c7' };
+  }
+  
+  // LOW RISK: Low SE and no contradictions
+  return { level: 'LOW RISK', color: COLORS.trustGreen, bgColor: '#dcfce7' };
+};
+
+
+// =============================================================================
+// SAMPLE DATA WITH EHR VERIFICATION DETAILS
+// =============================================================================
+
 const aiDocuments = [
   {
     id: 1,
@@ -33,6 +113,21 @@ const aiDocuments = [
     semanticEntropy: 0.84,
     assigned: 'Raubenheimer...',
     reviewLevel: 'Detailed',
+    // EHR Verification data
+    ehrVerification: {
+      claims: [
+        { type: 'medication', text: 'Metoprolol 50mg daily', verified: true },
+        { type: 'medication', text: 'Lisinopril 10mg daily', verified: true },
+        { type: 'allergy', text: 'NKDA', verified: true },
+        { type: 'diagnosis', text: 'Hypertension', verified: true },
+        { type: 'vital_sign', text: 'BP 142/88', verified: false }, // Not yet documented
+        { type: 'procedure', text: 'Scheduled for hip replacement', verified: true },
+      ],
+      totalClaims: 6,
+      verified: 5,
+      contradictions: 0,
+      unverified: 1,
+    }
   },
   {
     id: 2,
@@ -47,6 +142,17 @@ const aiDocuments = [
     semanticEntropy: 0.21,
     assigned: 'Raubenheimer...',
     reviewLevel: 'Brief',
+    ehrVerification: {
+      claims: [
+        { type: 'procedure', text: 'PIFP block performed', verified: true },
+        { type: 'medication', text: 'Ropivacaine 0.5% 20mL', verified: true },
+        { type: 'vital_sign', text: 'Vitals stable', verified: true },
+      ],
+      totalClaims: 3,
+      verified: 3,
+      contradictions: 0,
+      unverified: 0,
+    }
   },
   {
     id: 3,
@@ -61,6 +167,19 @@ const aiDocuments = [
     semanticEntropy: 0.28,
     assigned: 'Raubenheimer...',
     reviewLevel: 'Standard',
+    ehrVerification: {
+      claims: [
+        { type: 'medication', text: 'Aspirin 81mg daily', verified: true },
+        { type: 'diagnosis', text: 'Type 2 Diabetes', verified: true },
+        { type: 'diagnosis', text: 'CAD', verified: true },
+        { type: 'lab_result', text: 'HbA1c 7.2%', verified: true },
+        { type: 'allergy', text: 'Penicillin - rash', verified: true },
+      ],
+      totalClaims: 5,
+      verified: 5,
+      contradictions: 0,
+      unverified: 0,
+    }
   },
   {
     id: 4,
@@ -75,7 +194,20 @@ const aiDocuments = [
     semanticEntropy: 1.42,
     assigned: 'Raubenheimer...',
     reviewLevel: 'Detailed',
-    flagReason: 'Medication dosage inconsistency detected - Warfarin not in EHR',
+    flagReason: 'Medication inconsistency - "Warfarin 5mg" mentioned but NOT found in EHR',
+    ehrVerification: {
+      claims: [
+        { type: 'medication', text: 'Warfarin 5mg daily', verified: false, contradiction: true }, // NOT IN EHR!
+        { type: 'procedure', text: 'CABG x3 completed', verified: true },
+        { type: 'diagnosis', text: 'CAD', verified: true },
+        { type: 'vital_sign', text: 'Hemodynamically stable', verified: true },
+        { type: 'lab_result', text: 'Hgb 10.2', verified: true },
+      ],
+      totalClaims: 5,
+      verified: 4,
+      contradictions: 1,  // Warfarin contradiction!
+      unverified: 0,
+    }
   },
   {
     id: 5,
@@ -90,45 +222,27 @@ const aiDocuments = [
     semanticEntropy: null,
     assigned: 'Raubenheimer...',
     reviewLevel: null,
+    ehrVerification: null, // Not an AI document
   },
 ];
 
-// Semantic Entropy badge for table (color-coded)
-const SemanticEntropyBadge = ({ semanticEntropy }) => {
-  if (semanticEntropy === null) return <span style={{ color: '#666' }}>—</span>;
-  
-  let textColor;
-  // Lower SE = better (inverted from confidence)
-  if (semanticEntropy <= 0.3) {
-    textColor = COLORS.trustGreen;  // Low uncertainty = good
-  } else if (semanticEntropy <= 0.6) {
-    textColor = COLORS.trustAmber;  // Medium uncertainty
-  } else {
-    textColor = COLORS.trustRed;    // High uncertainty = concerning
-  }
-  
-  return (
-    <span style={{
-      fontWeight: '600',
-      color: textColor,
-    }}>
-      {semanticEntropy.toFixed(2)}
-    </span>
-  );
-};
 
-// Status indicator - UPDATED: Review Required now uses amber color
+// =============================================================================
+// UI COMPONENTS
+// =============================================================================
+
+// Status indicator - Review Required now uses amber color
 const StatusBadge = ({ status, type }) => {
   let color = '#008000';  // Default green
   let fontWeight = 'normal';
   let prefix = '';
   
   if (status === 'Flagged' || type === 'HALLUCINATION_DETECTED') {
-    color = COLORS.trustRed;  // Red for hallucinations
+    color = COLORS.trustRed;
     fontWeight = 'bold';
     prefix = '⚠ ';
   } else if (status === 'Review Required' || type === 'HIGH_UNCERTAINTY') {
-    color = COLORS.trustAmber;  // AMBER for high uncertainty (matches border strip)
+    color = COLORS.trustAmber;
     fontWeight = 'bold';
   }
   
@@ -148,6 +262,11 @@ const TrustMiniLogo = ({ size = 24 }) => (
     <path d="M13 52 L16 55 L22 48" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
   </svg>
 );
+
+
+// =============================================================================
+// MAIN COMPONENT
+// =============================================================================
 
 export default function TrustPowerChartDashboard() {
   const [selectedFolder, setSelectedFolder] = useState('AI Documents');
@@ -169,13 +288,40 @@ export default function TrustPowerChartDashboard() {
   const standardReview = aiDocuments.filter(d => d.type === 'STANDARD').length;
   const totalAI = highUncertainty + hallucinations + standardReview;
 
-  // Uncertainty level text based on semantic entropy
+  // Get uncertainty level text based on semantic entropy
   const getUncertaintyLevel = (se) => {
     if (se === null) return { text: '—', color: '#666' };
     if (se <= 0.3) return { text: `Low (${se.toFixed(2)})`, color: COLORS.trustGreen };
     if (se <= 0.6) return { text: `Medium (${se.toFixed(2)})`, color: COLORS.trustAmber };
     return { text: `High (${se.toFixed(2)})`, color: COLORS.trustRed };
   };
+
+  // Calculate stats for selected document
+  const getDocStats = (doc) => {
+    if (!doc || !doc.ehrVerification) {
+      return {
+        timeSaved: { timeSavedPercent: 0 },
+        risk: { level: 'N/A', color: '#666', bgColor: '#f0f0f0' },
+        claims: 0,
+        verified: 0,
+        contradictions: 0
+      };
+    }
+    
+    const { claims, verified, contradictions } = doc.ehrVerification;
+    const timeSaved = calculateTimeSaved(claims, contradictions);
+    const risk = calculateRiskLevel(doc);
+    
+    return {
+      timeSaved,
+      risk,
+      claims: doc.ehrVerification.totalClaims,
+      verified,
+      contradictions
+    };
+  };
+
+  const selectedDocStats = getDocStats(selectedDoc);
 
   return (
     <div style={{ 
@@ -255,7 +401,7 @@ export default function TrustPowerChartDashboard() {
             fontSize: '10px',
             fontWeight: '600'
           }}>
-            1 Alert
+            {hallucinations} Alert{hallucinations !== 1 ? 's' : ''}
           </span>
           <span style={{ cursor: 'pointer' }}>⚙ Settings</span>
         </div>
@@ -267,7 +413,7 @@ export default function TrustPowerChartDashboard() {
         {/* Left Sidebar - Inbox Summary */}
         <div style={{ width: '220px', borderRight: '1px solid #ccc', background: '#fafafa', display: 'flex', flexDirection: 'column' }}>
           
-          {/* Message Centre Header - Blue to match PowerChart */}
+          {/* Message Centre Header */}
           <div style={{ 
             background: '#005580', 
             color: 'white', 
@@ -278,7 +424,7 @@ export default function TrustPowerChartDashboard() {
             Message Centre
           </div>
 
-          {/* Inbox Summary Header - PIN REMOVED */}
+          {/* Inbox Summary Header - No pin icon */}
           <div style={{ 
             background: '#e8e8e8', 
             padding: '6px 12px', 
@@ -288,7 +434,6 @@ export default function TrustPowerChartDashboard() {
             alignItems: 'center'
           }}>
             <span style={{ fontWeight: '600' }}>Inbox Summary</span>
-            {/* Pin icon removed per user request */}
           </div>
 
           {/* Tabs */}
@@ -322,7 +467,7 @@ export default function TrustPowerChartDashboard() {
           {/* Folder Tree */}
           <div style={{ flex: 1, overflow: 'auto', padding: '4px 0' }}>
             
-            {/* AI Review Section - NEW */}
+            {/* AI Review Section */}
             <div>
               <div 
                 onClick={() => toggleSection('aiReview')}
@@ -348,7 +493,7 @@ export default function TrustPowerChartDashboard() {
                       padding: '3px 12px', 
                       cursor: 'pointer',
                       background: selectedFolder === 'High Uncertainty' ? COLORS.selectedBlue : 'transparent',
-                      color: selectedFolder === 'High Uncertainty' ? 'white' : COLORS.trustAmber,  // AMBER color
+                      color: selectedFolder === 'High Uncertainty' ? 'white' : COLORS.trustAmber,
                       fontWeight: '600'
                     }}
                   >
@@ -422,13 +567,6 @@ export default function TrustPowerChartDashboard() {
                 <span>{expandedSections.workItems ? '▼' : '▶'}</span>
                 <span>Work Items (0)</span>
               </div>
-              {expandedSections.workItems && (
-                <div style={{ marginLeft: '20px' }}>
-                  <div style={{ padding: '3px 12px', cursor: 'pointer' }}>Saved Documents</div>
-                  <div style={{ padding: '3px 12px', cursor: 'pointer' }}>Reminders</div>
-                  <div style={{ padding: '3px 12px', cursor: 'pointer' }}>Deficient Documents</div>
-                </div>
-              )}
             </div>
 
             {/* Notifications */}
@@ -440,13 +578,6 @@ export default function TrustPowerChartDashboard() {
                 <span>{expandedSections.notifications ? '▼' : '▶'}</span>
                 <span>Notifications</span>
               </div>
-              {expandedSections.notifications && (
-                <div style={{ marginLeft: '20px' }}>
-                  <div style={{ padding: '3px 12px', cursor: 'pointer' }}>Sent Items</div>
-                  <div style={{ padding: '3px 12px', cursor: 'pointer' }}>Trash</div>
-                  <div style={{ padding: '3px 12px', cursor: 'pointer' }}>Notify Receipts</div>
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -463,13 +594,11 @@ export default function TrustPowerChartDashboard() {
             gap: '8px',
             background: '#f8f8f8'
           }}>
-            <span style={{ fontWeight: '600' }}>
-              {selectedFolder === 'AI Documents' ? 'AI Documents' : selectedFolder}
-            </span>
+            <span style={{ fontWeight: '600' }}>AI Documents</span>
             <span style={{ cursor: 'pointer' }}>×</span>
           </div>
 
-          {/* Data Grid - SIMPLIFIED: Removed Semantic Entropy and Review Level columns */}
+          {/* Data Grid - Simplified columns */}
           <div style={{ flex: 1, overflow: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
               <thead>
@@ -516,7 +645,7 @@ export default function TrustPowerChartDashboard() {
               borderTop: '2px solid #0891b2', 
               padding: '16px', 
               background: 'linear-gradient(180deg, #f0f9ff 0%, #ffffff 100%)',
-              maxHeight: '220px',
+              maxHeight: '240px',
               overflow: 'auto'
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -542,8 +671,8 @@ export default function TrustPowerChartDashboard() {
                 </div>
               </div>
               
-              {/* Info boxes - Only Uncertainty Level and Review Level */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginTop: '12px' }}>
+              {/* Info boxes - 3 columns: Uncertainty, Review Level, EHR Verification */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginTop: '12px' }}>
                 <div style={{ background: 'white', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                   <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Uncertainty Level</div>
                   <div style={{ 
@@ -557,6 +686,19 @@ export default function TrustPowerChartDashboard() {
                 <div style={{ background: 'white', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                   <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Review Level</div>
                   <div style={{ fontSize: '16px', fontWeight: '600' }}>{selectedDoc.reviewLevel}</div>
+                </div>
+                <div style={{ background: 'white', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>EHR Verification</div>
+                  <div style={{ 
+                    fontSize: '14px', 
+                    fontWeight: '600',
+                    color: selectedDocStats.contradictions > 0 ? COLORS.trustRed : COLORS.trustGreen
+                  }}>
+                    {selectedDocStats.contradictions > 0 
+                      ? `${selectedDocStats.contradictions} contradiction${selectedDocStats.contradictions > 1 ? 's' : ''} found`
+                      : `${selectedDocStats.verified}/${selectedDocStats.claims} verified`
+                    }
+                  </div>
                 </div>
               </div>
 
@@ -580,16 +722,19 @@ export default function TrustPowerChartDashboard() {
               <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
                 <button style={{ 
                   padding: '8px 16px', 
-                  background: '#10b981', 
+                  background: selectedDocStats.contradictions > 0 ? '#9ca3af' : '#10b981',
                   color: 'white', 
                   border: 'none', 
                   borderRadius: '4px',
-                  cursor: 'pointer',
+                  cursor: selectedDocStats.contradictions > 0 ? 'not-allowed' : 'pointer',
                   fontWeight: '600',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px'
-                }}>
+                }}
+                disabled={selectedDocStats.contradictions > 0}
+                title={selectedDocStats.contradictions > 0 ? 'Cannot approve - contradictions found' : ''}
+                >
                   ✓ Approve & Sign
                 </button>
                 <button style={{ 
@@ -624,7 +769,7 @@ export default function TrustPowerChartDashboard() {
         </div>
       </div>
 
-      {/* Status Bar */}
+      {/* Status Bar - DYNAMIC based on selected document */}
       <div style={{ 
         background: '#f0f0f0', 
         padding: '4px 12px', 
@@ -636,7 +781,7 @@ export default function TrustPowerChartDashboard() {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <span style={{ 
-            background: '#10b981', 
+            background: COLORS.trustTeal, 
             color: 'white', 
             padding: '2px 8px', 
             borderRadius: '4px',
@@ -644,21 +789,54 @@ export default function TrustPowerChartDashboard() {
           }}>
             TRUST Analysis
           </span>
-          <span style={{ 
-            background: '#dcfce7', 
-            color: '#166534', 
-            padding: '2px 8px', 
-            borderRadius: '4px'
-          }}>
-            LOW RISK
-          </span>
-          <span>5 claims | 1 verified | 0 contradictions</span>
-          <span style={{ color: '#10b981', fontWeight: '600' }}>91.7% time saved</span>
+          
+          {selectedDoc && selectedDoc.ehrVerification ? (
+            <>
+              {/* Dynamic Risk Badge */}
+              <span style={{ 
+                background: selectedDocStats.risk.bgColor, 
+                color: selectedDocStats.risk.color, 
+                padding: '2px 8px', 
+                borderRadius: '4px',
+                fontWeight: '600'
+              }}>
+                {selectedDocStats.risk.level}
+              </span>
+              
+              {/* Dynamic Claims Stats */}
+              <span>
+                {selectedDocStats.claims} claims | {selectedDocStats.verified} verified | {selectedDocStats.contradictions} contradiction{selectedDocStats.contradictions !== 1 ? 's' : ''}
+              </span>
+              
+              {/* Dynamic Time Saved */}
+              <span style={{ 
+                color: selectedDocStats.timeSaved.timeSavedPercent > 50 ? COLORS.trustGreen : COLORS.trustAmber,
+                fontWeight: '600' 
+              }}>
+                {selectedDocStats.timeSaved.timeSavedPercent}% time saved
+              </span>
+            </>
+          ) : (
+            <span style={{ color: '#999' }}>Select an AI document to see analysis</span>
+          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{ color: '#0891b2', cursor: 'pointer' }}>Details ▼</span>
           <span>×</span>
         </div>
+      </div>
+
+      {/* Footer */}
+      <div style={{ 
+        background: '#e0e0e0', 
+        padding: '2px 12px', 
+        fontSize: '9px',
+        color: '#666',
+        display: 'flex',
+        justifyContent: 'space-between'
+      }}>
+        <span>TRUST Platform v0.2.0 | Cerner FHIR Connected</span>
+        <span>{new Date().toLocaleDateString()} {new Date().toLocaleTimeString()}</span>
       </div>
     </div>
   );
