@@ -1,9 +1,9 @@
 /**
  * TRUST Platform - Login / Landing Page
- * Clean, minimal design
+ * Clean, minimal design with animated verification ring
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from './AuthProvider';
 import { isAzureConfigured } from './authConfig';
 
@@ -20,10 +20,69 @@ const COLORS = {
   error: '#ef4444',
 };
 
+// CSS for the ring animation
+const animationStyles = `
+  @keyframes drawRing {
+    0% {
+      stroke-dashoffset: 283;
+    }
+    100% {
+      stroke-dashoffset: 47;
+    }
+  }
+  
+  @keyframes fadeInCheckmark {
+    0% {
+      opacity: 0;
+      transform: scale(0.5);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  
+  @keyframes pulseGlow {
+    0%, 100% {
+      filter: drop-shadow(0 0 8px rgba(8, 145, 178, 0.4));
+    }
+    50% {
+      filter: drop-shadow(0 0 16px rgba(8, 145, 178, 0.6));
+    }
+  }
+  
+  .trust-ring-animated {
+    stroke-dasharray: 283;
+    stroke-dashoffset: 283;
+    animation: drawRing 1.8s ease-out forwards;
+  }
+  
+  .trust-checkmark {
+    opacity: 0;
+    transform-origin: center;
+    animation: fadeInCheckmark 0.4s ease-out 1.6s forwards;
+  }
+  
+  .trust-ring-glow {
+    animation: pulseGlow 3s ease-in-out infinite;
+    animation-delay: 2s;
+  }
+`;
+
 export function LoginPage() {
   const { login, isLoading, error } = useAuth();
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [localError, setLocalError] = useState(null);
+
+  // Inject animation styles
+  useEffect(() => {
+    const styleElement = document.createElement('style');
+    styleElement.textContent = animationStyles;
+    document.head.appendChild(styleElement);
+    return () => {
+      document.head.removeChild(styleElement);
+    };
+  }, []);
 
   const handleSignIn = async () => {
     setIsSigningIn(true);
@@ -44,30 +103,42 @@ export function LoginPage() {
     <div style={styles.container}>
       <div style={styles.content}>
         
-        {/* TRUST Logo */}
+        {/* TRUST Logo with Animated Ring */}
         <div style={styles.logoContainer}>
-          <svg width="140" height="140" viewBox="0 0 140 140" fill="none">
+          <svg 
+            width="140" 
+            height="140" 
+            viewBox="0 0 140 140" 
+            fill="none"
+            className="trust-ring-glow"
+          >
             {/* Background ring */}
             <circle 
               cx="70" 
               cy="70" 
-              r="50" 
+              r="45" 
               stroke={COLORS.slate700} 
               strokeWidth="6" 
               fill="none"
             />
             
-            {/* Progress ring */}
-            <path 
-              d="M70 20 A50 50 0 1 1 25 85" 
-              stroke={COLORS.teal500} 
-              strokeWidth="6" 
-              fill="none" 
+            {/* Animated progress ring */}
+            <circle
+              cx="70"
+              cy="70"
+              r="45"
+              stroke={COLORS.teal500}
+              strokeWidth="6"
+              fill="none"
               strokeLinecap="round"
-              style={{ filter: `drop-shadow(0 0 10px ${COLORS.teal500}40)` }}
+              className="trust-ring-animated"
+              style={{
+                transform: 'rotate(-90deg)',
+                transformOrigin: 'center',
+              }}
             />
             
-            {/* Center text - TRUST only */}
+            {/* Center text - TRUST */}
             <text 
               x="70" 
               y="75" 
@@ -80,16 +151,18 @@ export function LoginPage() {
               TRUST
             </text>
             
-            {/* Checkmark circle */}
-            <circle cx="25" cy="85" r="12" fill={COLORS.teal500}/>
-            <path 
-              d="M19 85 L23 89 L31 80" 
-              stroke="#ffffff" 
-              strokeWidth="3" 
-              strokeLinecap="round" 
-              strokeLinejoin="round" 
-              fill="none"
-            />
+            {/* Checkmark circle - animated fade in */}
+            <g className="trust-checkmark">
+              <circle cx="25" cy="85" r="12" fill={COLORS.teal500}/>
+              <path 
+                d="M19 85 L23 89 L31 80" 
+                stroke="#ffffff" 
+                strokeWidth="3" 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                fill="none"
+              />
+            </g>
           </svg>
           
           {/* PLATFORM text below the ring */}
