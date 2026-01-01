@@ -201,14 +201,13 @@ export function LoginPage() {
             <p style={styles.errorText}>⚠️ {error || localError}</p>
           )}
           
-          <p style={styles.privacyNote}>
-            Protected under PIPEDA compliance
-          </p>
+          
         </div>
       </div>
       
       {/* Footer - positioned at bottom */}
       <footer style={styles.footer}>
+        <p style={styles.privacyNote}>Protected under PIPEDA</p>
         <p style={styles.footerText}>© 2025 TRUST Platform • Providence Health Care</p>
       </footer>
     </div>
@@ -312,7 +311,7 @@ const styles = {
   privacyNote: {
     color: COLORS.slate500,
     fontSize: '12px',
-    marginTop: '8px',
+    marginBottom: '4px',
   },
   
   footer: {
