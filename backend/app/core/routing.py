@@ -193,6 +193,29 @@ async def analyze_note(
     # Step 2: Source verification (fast)
     verification_results = verify_all_claims(claims, transcript)
     
+    # Step 2b: EHR verification (the TRUST advantage!)
+    patient_id = note.get('patient', {}).get('id')
+    if patient_id:
+        from .ehr_verification import verify_note_against_ehr
+        ehr_results = verify_note_against_ehr(claims, patient_id)
+        # Merge EHR results into verification results
+        for i, result in enumerate(verification_results['results']):
+            for ehr_result in ehr_results.get('results', []):
+                if result.claim.id == ehr_result.claim.id:
+                    # EHR verification overrides source verification
+                    if ehr_result.status.value == 'contradicted':
+                        result.status = VerificationStatus.CONTRADICTED
+                        result.explanation = f"EHR CONTRADICTION: {ehr_result.explanation}"
+                    elif ehr_result.status.value == 'not_in_ehr':
+                        result.status = VerificationStatus.NOT_FOUND
+                        result.explanation = f"NOT IN EHR: {ehr_result.explanation}"
+                    elif ehr_result.status.value == 'verified':
+                        result.status = VerificationStatus.VERIFIED
+                        result.explanation = f"EHR VERIFIED: {ehr_result.explanation}"
+        verification_results['contradicted'] = ehr_results.get('contradicted', 0)
+    
+    # Step 3: Analyze each claim
+    
     # Step 3: Analyze each claim
     claim_analyses = []
     

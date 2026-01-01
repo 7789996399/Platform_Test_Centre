@@ -1,0 +1,61 @@
+{
+  "scenario_id": "SCENARIO_20260101_134559_MOCK_PATIENT_001",
+  "patient_id": "MOCK_PATIENT_001",
+  "created_at": "2026-01-01T13:45:59.581814",
+  "ground_truth": {
+    "medications": [
+      "Metoprolol 50mg BID",
+      "Lisinopril 10mg daily",
+      "Aspirin 81mg daily"
+    ],
+    "allergies": [
+      "Penicillin"
+    ],
+    "conditions": [
+      "Hypertension",
+      "Hyperlipidemia"
+    ],
+    "vitals": {
+      "blood_pressure": "128/82",
+      "heart_rate": "76"
+    }
+  },
+  "generated_content": {
+    "transcript": "Doctor: Hello Test Patient, thanks for coming in. What brings you here today?\nPatient: I'm doing okay, thanks for asking.\n\nDoctor: Let's review your medications.\nDoctor: Are you still on Metoprolol 50mg BID? Any side effects?\nPatient: Yes, I've been taking it as prescribed.\nDoctor: I see you're taking Lisinopril 10mg daily. How has that been working for you?\nPatient: Yes, I've been taking it as prescribed.\nDoctor: I see you're taking Aspirin 81mg daily. How has that been working for you?\nPatient: Yes, I've been taking it as prescribed.\nDoctor: Are you still on Prednisone 10mg daily? Any side effects?\nPatient: Yes, I've been taking it as prescribed.\nDoctor: I see you're taking Prednisone 10mg daily. How has that been working for you?\nPatient: Yes, I've been taking it as prescribed.\n\nDoctor: I want to confirm your allergies. You're allergic to Penicillin?\nPatient: That's correct.\n\nDoctor: How has your Hypertension been? Any changes?\nPatient: It's been manageable.\nDoctor: How has your Hyperlipidemia been? Any changes?\nPatient: It's been manageable.\nDoctor: How has your GERD been? Any changes?\nPatient: It's been manageable.\n\nDoctor: Your blood pressure today is 128/82, heart rate 76.\nPatient: Okay.\n\nDoctor: Any other concerns before we wrap up?\nPatient: No, I think we covered everything. Thank you, doctor.",
+    "ai_note": "\nCLINICAL NOTE\n=============\n\nPatient: Test Patient\nDate: 2026-01-01\nVisit Type: Follow-up\n\nCHIEF COMPLAINT:\nRoutine follow-up visit.\n\nCURRENT MEDICATIONS:\n- Metoprolol 50mg BID\n- Lisinopril 10mg daily\n- Aspirin 81mg daily\n- Prednisone 10mg daily\n\nALLERGIES:\n- Penicillin\n\nMEDICAL HISTORY:\n- Hypertension\n- Hyperlipidemia\n- GERD\n\nVITAL SIGNS:\nBP: 128/82, HR: 76\n\nASSESSMENT AND PLAN:\nPatient is here for routine follow-up. Current medications reviewed and continued.\nFollow-up scheduled in 4 weeks.\n\nElectronically signed by: AI Scribe (pending physician review)\n"
+  },
+  "injected_hallucinations": [
+    {
+      "id": "HAL_001",
+      "type": "diagnosis_addition",
+      "fake_claim": "GERD",
+      "ground_truth": null,
+      "severity": "low",
+      "detected": false,
+      "detection_method": null
+    },
+    {
+      "id": "HAL_002",
+      "type": "medication_addition",
+      "fake_claim": "Prednisone 10mg daily",
+      "ground_truth": null,
+      "severity": "high",
+      "detected": false,
+      "detection_method": null
+    }
+  ],
+  "trust_analysis": {
+    "total_claims": 0,
+    "verified": 0,
+    "contradictions": 0,
+    "confident_hallucinators": 0,
+    "overall_risk": "LOW",
+    "review_queue": []
+  },
+  "scoring": {
+    "hallucinations_detected": 0,
+    "hallucinations_missed": 2,
+    "false_positives": 0,
+    "detection_rate": 0.0
+  }
+}

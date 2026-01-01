@@ -65,40 +65,22 @@ def get_risk_level(claim_type: ClaimType) -> str:
 
 
 def extract_medications(text: str, section: str) -> List[Claim]:
-    """
-    Extract medication claims from text.
-    
-    Looks for patterns like:
-    - "Metoprolol 50mg PO BID"
-    - "aspirin 81mg daily"
-    - "on lisinopril"
-    """
+    """Extract medication claims - simple line-based extraction."""
     claims = []
     
-    # Common medication pattern: Name + optional dose + optional route + optional frequency
-    med_pattern = r'\b([A-Z][a-z]+(?:in|ol|il|ide|ate|one|ax|ex|ib|mab)?)\s*(\d+\s*(?:mg|mcg|g|ml|units?))?(?:\s*(PO|IV|IM|SC|SQ|PR|SL|topical))?(?:\s*(daily|BID|TID|QID|PRN|once|twice|weekly))?\b'
+    # Only extract from medication-related sections
+    if 'medication' not in section.lower():
+        return claims
     
-    # Common medication names to look for
-    common_meds = [
-        'metoprolol', 'lisinopril', 'aspirin', 'atorvastatin', 'warfarin',
-        'clopidogrel', 'plavix', 'amiodarone', 'digoxin', 'furosemide',
-        'lasix', 'heparin', 'insulin', 'morphine', 'fentanyl', 'propofol',
-        'midazolam', 'rocuronium', 'succinylcholine', 'epinephrine',
-        'norepinephrine', 'vasopressin', 'dobutamine', 'milrinone'
-    ]
-    
-    text_lower = text.lower()
-    
-    for med in common_meds:
-        if med in text_lower:
-            # Find the full context around the medication mention
-            pattern = rf'({med}\s*\d*\s*(?:mg|mcg|g)?\s*(?:PO|IV|IM)?\s*(?:daily|BID|TID|QID|once|twice)?)'
-            matches = re.findall(pattern, text_lower, re.IGNORECASE)
-            
-            for match in matches:
+    lines = text.split('\n')
+    for i, line in enumerate(lines):
+        line = line.strip()
+        if line.startswith('- ') or line.startswith('• '):
+            med_text = line[2:].strip()
+            if med_text and len(med_text) > 2:
                 claims.append(Claim(
-                    id=f"med_{len(claims)}_{med}",
-                    text=match.strip(),
+                    id=f"med_{i}",
+                    text=med_text,
                     claim_type=ClaimType.MEDICATION,
                     section=section,
                     risk_level="high",
@@ -106,6 +88,8 @@ def extract_medications(text: str, section: str) -> List[Claim]:
                     verified=None,
                     confidence=None
                 ))
+    
+    return claims
     
     return claims
 
@@ -201,6 +185,33 @@ def extract_exam_findings(text: str, section: str) -> List[Claim]:
     
     return claims
 
+def extract_conditions(text: str, section: str) -> List[Claim]:
+    """Extract diagnosis/condition claims from text."""
+    claims = []
+    # Only extract from condition-related sections
+    if 'condition' not in section.lower() and 'history' not in section.lower() and 'diagnos' not in section.lower():
+        return claims
+    
+    
+    # Look for lines starting with "- " in conditions section
+    lines = text.split('\n')
+    for line in lines:
+        line = line.strip()
+        if line.startswith('- ') or line.startswith('• '):
+            condition = line[2:].strip()
+            if condition and len(condition) > 2:
+                claims.append(Claim(
+                    id=f"cond_{len(claims)}",
+                    text=condition,
+                    claim_type=ClaimType.DIAGNOSIS,
+                    section=section,
+                    risk_level="high",
+                    source_span=None,
+                    verified=None,
+                    confidence=None
+                ))
+    
+    return claims
 
 def extract_claims_from_note(note: Dict) -> List[Claim]:
     """
@@ -222,6 +233,7 @@ def extract_claims_from_note(note: Dict) -> List[Claim]:
             all_claims.extend(extract_medications(section_text, section_name))
             all_claims.extend(extract_allergies(section_text, section_name))
             all_claims.extend(extract_vital_signs(section_text, section_name))
+            all_claims.extend(extract_conditions(section_text, section_name))
             all_claims.extend(extract_exam_findings(section_text, section_name))
         
         elif isinstance(section_text, list):

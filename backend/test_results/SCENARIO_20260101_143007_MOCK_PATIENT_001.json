@@ -1,0 +1,87 @@
+{
+  "scenario_id": "SCENARIO_20260101_143007_MOCK_PATIENT_001",
+  "patient_id": "MOCK_PATIENT_001",
+  "created_at": "2026-01-01T14:30:07.747801",
+  "ground_truth": {
+    "medications": [
+      "Metoprolol 50mg BID",
+      "Lisinopril 10mg daily",
+      "Aspirin 81mg daily"
+    ],
+    "allergies": [
+      "Penicillin"
+    ],
+    "conditions": [
+      "Hypertension",
+      "Hyperlipidemia"
+    ],
+    "vitals": {
+      "blood_pressure": "128/82",
+      "heart_rate": "76"
+    }
+  },
+  "generated_content": {
+    "transcript": "Doctor: Hello Test Patient, thanks for coming in. What brings you here today?\nPatient: I'm doing okay, thanks for asking.\n\nDoctor: Let's review your medications.\nDoctor: Are you still on Metoprolol 50mg BID? Any side effects?\nPatient: Yes, I've been taking it as prescribed.\nDoctor: Let's review your medications. You're currently on Lisinopril 10mg daily, correct?\nPatient: Yes, I've been taking it as prescribed.\nDoctor: Are you still on Aspirin 81mg daily? Any side effects?\nPatient: Yes, I've been taking it as prescribed.\nDoctor: Let's review your medications. You're currently on Amoxicillin 500mg TID, correct?\nPatient: Yes, I've been taking it as prescribed.\nDoctor: Let's review your medications. You're currently on Amoxicillin 500mg TID, correct?\nPatient: Yes, I've been taking it as prescribed.\n\nDoctor: I want to confirm your allergies. You're allergic to Penicillin?\nPatient: That's correct.\n\nDoctor: Given your history of Hypertension, we should monitor that closely.\nPatient: It's been manageable.\nDoctor: I want to discuss your Hyperlipidemia today.\nPatient: It's been manageable.\nDoctor: I want to discuss your Type 2 Diabetes Mellitus today.\nPatient: It's been manageable.\n\nDoctor: Your blood pressure today is 128/82, heart rate 76.\nPatient: Okay.\n\nDoctor: Do you have any questions for me?\nPatient: No, I think we covered everything. Thank you, doctor.",
+    "ai_note": "\nCLINICAL NOTE\n=============\n\nPatient: Test Patient\nDate: 2026-01-01\nVisit Type: Follow-up\n\nCHIEF COMPLAINT:\nRoutine follow-up visit.\n\nCURRENT MEDICATIONS:\n- Metoprolol 50mg BID\n- Lisinopril 10mg daily\n- Aspirin 81mg daily\n- Amoxicillin 500mg TID\n\nALLERGIES:\n- Penicillin\n\nMEDICAL HISTORY:\n- Hypertension\n- Hyperlipidemia\n- Type 2 Diabetes Mellitus\n\nVITAL SIGNS:\nBP: 128/82, HR: 76\n\nASSESSMENT AND PLAN:\nPatient is here for routine follow-up. Current medications reviewed and continued.\nFollow-up scheduled in 2 weeks.\n\nElectronically signed by: AI Scribe (pending physician review)\n"
+  },
+  "injected_hallucinations": [
+    {
+      "id": "HAL_001",
+      "type": "diagnosis_addition",
+      "fake_claim": "Type 2 Diabetes Mellitus",
+      "ground_truth": null,
+      "severity": "high",
+      "detected": false,
+      "detection_method": null
+    },
+    {
+      "id": "HAL_002",
+      "type": "medication_addition",
+      "fake_claim": "Amoxicillin 500mg TID",
+      "ground_truth": null,
+      "severity": "high",
+      "detected": false,
+      "detection_method": null
+    }
+  ],
+  "trust_analysis": {
+    "total_claims": 5,
+    "verified": 3,
+    "contradictions": 0,
+    "confident_hallucinators": 0,
+    "overall_risk": "LOW",
+    "review_queue": [
+      {
+        "claim": "lisinopril 10mg daily",
+        "status": "verified",
+        "priority": 14.38
+      },
+      {
+        "claim": "heart_rate: 76",
+        "status": "partial",
+        "priority": 14.26
+      },
+      {
+        "claim": "aspirin 81mg daily",
+        "status": "verified",
+        "priority": 14.22
+      },
+      {
+        "claim": "blood_pressure: 128/82",
+        "status": "partial",
+        "priority": 14.19
+      },
+      {
+        "claim": "metoprolol 50mg bid",
+        "status": "verified",
+        "priority": 14.11
+      }
+    ]
+  },
+  "scoring": {
+    "hallucinations_detected": 0,
+    "hallucinations_missed": 2,
+    "false_positives": 0,
+    "detection_rate": 0.0
+  }
+}
