@@ -96,10 +96,6 @@ export function LoginPage() {
           <p style={styles.platformText}>PLATFORM</p>
         </div>
         
-        {/* Tagline */}
-        <h1 style={styles.headline}>AI Governance for Healthcare</h1>
-        <p style={styles.tagline}>Auditing AI. Protecting Patients. Empowering Physicians.</p>
-        
         {/* Sign In Section */}
         <div style={styles.signInSection}>
           
@@ -136,12 +132,12 @@ export function LoginPage() {
             Protected under PIPEDA compliance
           </p>
         </div>
-        
-        {/* Footer */}
-        <footer style={styles.footer}>
-          <p>© 2025 TRUST Platform • Providence Health Care</p>
-        </footer>
       </div>
+      
+      {/* Footer - positioned at bottom */}
+      <footer style={styles.footer}>
+        <p style={styles.footerText}>© 2025 TRUST Platform • Providence Health Care</p>
+      </footer>
     </div>
   );
 }
@@ -162,8 +158,10 @@ const styles = {
     minHeight: '100vh',
     background: `linear-gradient(135deg, ${COLORS.slate900} 0%, ${COLORS.slate800} 100%)`,
     display: 'flex',
+    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
   },
   
   content: {
@@ -172,7 +170,7 @@ const styles = {
   },
   
   logoContainer: {
-    marginBottom: '40px',
+    marginBottom: '48px',
   },
   
   platformText: {
@@ -183,22 +181,6 @@ const styles = {
     letterSpacing: '4px',
     marginTop: '16px',
     marginBottom: 0,
-  },
-  
-  headline: {
-    fontFamily: "'Sora', sans-serif",
-    fontSize: '2rem',
-    fontWeight: 700,
-    color: COLORS.slate100,
-    marginBottom: '12px',
-    letterSpacing: '-0.02em',
-  },
-  
-  tagline: {
-    fontFamily: "'Outfit', sans-serif",
-    fontSize: '1rem',
-    color: COLORS.slate400,
-    marginBottom: '48px',
   },
   
   signInSection: {
@@ -261,10 +243,18 @@ const styles = {
   },
   
   footer: {
-    marginTop: '80px',
+    position: 'absolute',
+    bottom: '24px',
+    left: 0,
+    right: 0,
+    textAlign: 'center',
+  },
+  
+  footerText: {
     color: COLORS.slate500,
     fontSize: '12px',
     fontFamily: "'Outfit', sans-serif",
+    margin: 0,
   },
 };
 
