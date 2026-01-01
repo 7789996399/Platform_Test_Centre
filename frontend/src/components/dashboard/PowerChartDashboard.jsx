@@ -34,7 +34,6 @@ const initialAiDocuments = [
     createDate: '27-Dec-2025',
     status: 'Review Required',
     type: 'HIGH_UNCERTAINTY',
-    confidence: 72,
     semanticEntropy: 0.84,
     assigned: 'Raubenheimer...',
     reviewLevel: 'Detailed',
@@ -64,7 +63,6 @@ const initialAiDocuments = [
     createDate: '27-Dec-2025',
     status: 'Pending',
     type: 'STANDARD',
-    confidence: 94,
     semanticEntropy: 0.21,
     assigned: 'Raubenheimer...',
     reviewLevel: 'Brief',
@@ -92,7 +90,6 @@ const initialAiDocuments = [
     createDate: '27-Dec-2025',
     status: 'Pending',
     type: 'STANDARD',
-    confidence: 91,
     semanticEntropy: 0.28,
     assigned: 'Raubenheimer...',
     reviewLevel: 'Standard',
@@ -119,7 +116,6 @@ const initialAiDocuments = [
     createDate: '26-Dec-2025',
     status: 'Flagged',
     type: 'HALLUCINATION_DETECTED',
-    confidence: 45,
     semanticEntropy: 1.42,
     assigned: 'Raubenheimer...',
     reviewLevel: 'Detailed',
@@ -148,47 +144,40 @@ const initialAiDocuments = [
     createDate: '25-Dec-2025',
     status: 'Pending',
     type: 'REVIEW_DOC',
-    confidence: null,
     semanticEntropy: null,
     assigned: 'Raubenheimer...',
     reviewLevel: null,
   },
 ];
 
-// Confidence badge component
-const ConfidenceBadge = ({ confidence, semanticEntropy }) => {
-  if (confidence === null) return <span style={{ color: '#666' }}>—</span>;
+// Semantic Entropy badge component (TRUST's validated metric)
+// Lower SE = more consistent/reliable, Higher SE = more uncertainty
+const SemanticEntropyBadge = ({ semanticEntropy }) => {
+  if (semanticEntropy === null) return <span style={{ color: '#666' }}>—</span>;
   
   let bgColor, textColor;
-  if (confidence >= 90) {
-    bgColor = '#dcfce7';
+  if (semanticEntropy <= 0.3) {
+    bgColor = 'rgba(16, 185, 129, 0.1)';
     textColor = '#166534';
-  } else if (confidence >= 75) {
-    bgColor = '#fef3c7';
+  } else if (semanticEntropy <= 0.6) {
+    bgColor = 'rgba(245, 158, 11, 0.1)';
     textColor = '#92400e';
   } else {
-    bgColor = '#fee2e2';
+    bgColor = 'rgba(239, 68, 68, 0.1)';
     textColor = '#991b1b';
   }
   
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-      <span style={{
-        padding: '2px 8px',
-        borderRadius: '4px',
-        fontSize: '11px',
-        fontWeight: '600',
-        backgroundColor: bgColor,
-        color: textColor,
-      }}>
-        {confidence}%
-      </span>
-      {semanticEntropy !== null && semanticEntropy > 0.5 && (
-        <span title={`Semantic Entropy: ${semanticEntropy.toFixed(2)}`} style={{ cursor: 'help' }}>
-          ⚠️
-        </span>
-      )}
-    </div>
+    <span style={{
+      padding: '2px 8px',
+      borderRadius: '4px',
+      fontSize: '11px',
+      fontWeight: '500',
+      backgroundColor: bgColor,
+      color: textColor,
+    }}>
+      {semanticEntropy.toFixed(2)}
+    </span>
   );
 };
 
@@ -197,9 +186,9 @@ const ReviewBadge = ({ level }) => {
   if (!level) return <span style={{ color: '#666' }}>—</span>;
   
   const styles = {
-    Brief: { bg: '#dbeafe', color: '#1e40af' },
-    Standard: { bg: '#e0e7ff', color: '#3730a3' },
-    Detailed: { bg: '#fae8ff', color: '#86198f' },
+    Brief: { bg: 'rgba(59, 130, 246, 0.08)', color: '#1e40af' },
+    Standard: { bg: 'rgba(99, 102, 241, 0.08)', color: '#3730a3' },
+    Detailed: { bg: 'rgba(168, 85, 247, 0.08)', color: '#86198f' },
   };
   
   const style = styles[level] || styles.Standard;
@@ -220,20 +209,20 @@ const ReviewBadge = ({ level }) => {
 
 // Status indicator
 const StatusBadge = ({ status, type }) => {
-  let color = '#008000';
+  let color = '#166534';
   let fontWeight = 'normal';
   
   if (status === 'Flagged' || type === 'HALLUCINATION_DETECTED') {
-    color = '#dc2626';
-    fontWeight = 'bold';
+    color = '#991b1b';
+    fontWeight = '600';
   } else if (status === 'Review Required' || type === 'HIGH_UNCERTAINTY') {
-    color = '#d97706';
-    fontWeight = 'bold';
+    color = '#92400e';
+    fontWeight = '600';
   }
   
   return (
-    <span style={{ color, fontWeight }}>
-      {type === 'HALLUCINATION_DETECTED' && '⚠️ '}
+    <span style={{ color, fontWeight, fontSize: '11px' }}>
+      {type === 'HALLUCINATION_DETECTED' && '⚠ '}
       {status}
     </span>
   );
@@ -248,13 +237,23 @@ const TrustMiniLogo = ({ size = 24 }) => (
     <path d="M13 52 L16 55 L22 48" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
   </svg>
 );
+
 // TRUST ML Analysis Panel Component - Compact & Non-disruptive
 const TRUSTAnalysisPanel = ({ analysis, loading, onClose }) => {
   const [expanded, setExpanded] = useState(false);
   
   if (loading) {
     return (
-      <div style={{ padding: '8px 16px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', fontSize: '11px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <div style={{ 
+        padding: '8px 16px', 
+        background: '#f8fafc', 
+        borderTop: '1px solid #e2e8f0', 
+        fontSize: '11px', 
+        color: '#64748b', 
+        display: 'flex', 
+        alignItems: 'center', 
+        gap: '8px' 
+      }}>
         <span>⏳</span> Running TRUST Analysis...
       </div>
     );
@@ -287,22 +286,47 @@ const TRUSTAnalysisPanel = ({ analysis, loading, onClose }) => {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <span style={{ fontWeight: '600', color: '#8b5cf6' }}>TRUST Analysis</span>
-          <span style={{ padding: '2px 8px', borderRadius: '4px', background: riskStyle.text, color: 'white', fontWeight: '600', fontSize: '10px' }}>
+          <span style={{ 
+            padding: '2px 8px', 
+            borderRadius: '4px', 
+            background: riskStyle.text, 
+            color: 'white', 
+            fontWeight: '600', 
+            fontSize: '10px' 
+          }}>
             {analysis.overall_risk} RISK
           </span>
-          <span>{analysis.summary.total_claims} claims | {analysis.summary.verified} verified | {analysis.summary.contradictions} contradictions</span>
-          <span style={{ color: '#166534', fontWeight: '600' }}>{analysis.review_burden.time_saved_percent}% time saved</span>
+          <span>
+            {analysis.summary.total_claims} claims | {analysis.summary.verified} verified | {analysis.summary.contradictions} contradictions
+          </span>
+          <span style={{ color: '#166534', fontWeight: '600' }}>
+            {analysis.review_burden.time_saved_percent}% time saved
+          </span>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
           <button 
             onClick={() => setExpanded(true)}
-            style={{ background: 'transparent', border: '1px solid #8b5cf6', color: '#8b5cf6', padding: '2px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '10px' }}
+            style={{ 
+              background: 'transparent', 
+              border: '1px solid #8b5cf6', 
+              color: '#8b5cf6', 
+              padding: '2px 8px', 
+              borderRadius: '4px', 
+              cursor: 'pointer', 
+              fontSize: '10px' 
+            }}
           >
             Details ▼
           </button>
           <button 
             onClick={onClose}
-            style={{ background: 'transparent', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '14px' }}
+            style={{ 
+              background: 'transparent', 
+              border: 'none', 
+              color: '#64748b', 
+              cursor: 'pointer', 
+              fontSize: '14px' 
+            }}
           >
             ×
           </button>
@@ -314,23 +338,50 @@ const TRUSTAnalysisPanel = ({ analysis, loading, onClose }) => {
   // Expanded view (only when user clicks Details)
   return (
     <div style={{ borderTop: '2px solid #8b5cf6', background: '#faf5ff' }}>
-      <div style={{ padding: '8px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0' }}>
+      <div style={{ 
+        padding: '8px 16px', 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        borderBottom: '1px solid #e2e8f0' 
+      }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{ fontWeight: '600', color: '#8b5cf6' }}>TRUST ML Analysis</span>
-          <span style={{ padding: '2px 8px', borderRadius: '4px', background: riskStyle.text, color: 'white', fontWeight: '600', fontSize: '10px' }}>
+          <span style={{ 
+            padding: '2px 8px', 
+            borderRadius: '4px', 
+            background: riskStyle.text, 
+            color: 'white', 
+            fontWeight: '600', 
+            fontSize: '10px' 
+          }}>
             {analysis.overall_risk} RISK
           </span>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
           <button 
             onClick={() => setExpanded(false)}
-            style={{ background: 'transparent', border: '1px solid #8b5cf6', color: '#8b5cf6', padding: '2px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '10px' }}
+            style={{ 
+              background: 'transparent', 
+              border: '1px solid #8b5cf6', 
+              color: '#8b5cf6', 
+              padding: '2px 8px', 
+              borderRadius: '4px', 
+              cursor: 'pointer', 
+              fontSize: '10px' 
+            }}
           >
             Collapse ▲
           </button>
           <button 
             onClick={onClose}
-            style={{ background: 'transparent', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '14px' }}
+            style={{ 
+              background: 'transparent', 
+              border: 'none', 
+              color: '#64748b', 
+              cursor: 'pointer', 
+              fontSize: '14px' 
+            }}
           >
             ×
           </button>
@@ -338,25 +389,66 @@ const TRUSTAnalysisPanel = ({ analysis, loading, onClose }) => {
       </div>
       
       {/* Summary Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px', padding: '12px 16px' }}>
-        <div style={{ background: 'white', padding: '8px', borderRadius: '4px', textAlign: 'center', border: '1px solid #e2e8f0' }}>
-          <div style={{ fontSize: '18px', fontWeight: '700', color: '#475569' }}>{analysis.summary.total_claims}</div>
+      <div style={{ 
+        display: 'grid', 
+        gridTemplateColumns: 'repeat(5, 1fr)', 
+        gap: '8px', 
+        padding: '12px 16px' 
+      }}>
+        <div style={{ 
+          background: 'white', 
+          padding: '8px', 
+          borderRadius: '4px', 
+          textAlign: 'center', 
+          border: '1px solid #e2e8f0' 
+        }}>
+          <div style={{ fontSize: '18px', fontWeight: '700', color: '#475569' }}>
+            {analysis.summary.total_claims}
+          </div>
           <div style={{ fontSize: '9px', color: '#64748b' }}>Claims</div>
         </div>
-        <div style={{ background: '#dcfce7', padding: '8px', borderRadius: '4px', textAlign: 'center' }}>
-          <div style={{ fontSize: '18px', fontWeight: '700', color: '#166534' }}>{analysis.summary.verified}</div>
+        <div style={{ 
+          background: '#dcfce7', 
+          padding: '8px', 
+          borderRadius: '4px', 
+          textAlign: 'center' 
+        }}>
+          <div style={{ fontSize: '18px', fontWeight: '700', color: '#166534' }}>
+            {analysis.summary.verified}
+          </div>
           <div style={{ fontSize: '9px', color: '#166534' }}>Verified</div>
         </div>
-        <div style={{ background: '#fef3c7', padding: '8px', borderRadius: '4px', textAlign: 'center' }}>
-          <div style={{ fontSize: '18px', fontWeight: '700', color: '#92400e' }}>{analysis.summary.needs_review}</div>
+        <div style={{ 
+          background: '#fef3c7', 
+          padding: '8px', 
+          borderRadius: '4px', 
+          textAlign: 'center' 
+        }}>
+          <div style={{ fontSize: '18px', fontWeight: '700', color: '#92400e' }}>
+            {analysis.summary.needs_review}
+          </div>
           <div style={{ fontSize: '9px', color: '#92400e' }}>Review</div>
         </div>
-        <div style={{ background: '#fee2e2', padding: '8px', borderRadius: '4px', textAlign: 'center' }}>
-          <div style={{ fontSize: '18px', fontWeight: '700', color: '#991b1b' }}>{analysis.summary.contradictions}</div>
+        <div style={{ 
+          background: '#fee2e2', 
+          padding: '8px', 
+          borderRadius: '4px', 
+          textAlign: 'center' 
+        }}>
+          <div style={{ fontSize: '18px', fontWeight: '700', color: '#991b1b' }}>
+            {analysis.summary.contradictions}
+          </div>
           <div style={{ fontSize: '9px', color: '#991b1b' }}>Contradict</div>
         </div>
-        <div style={{ background: '#dbeafe', padding: '8px', borderRadius: '4px', textAlign: 'center' }}>
-          <div style={{ fontSize: '18px', fontWeight: '700', color: '#1e40af' }}>{analysis.review_burden.time_saved_percent}%</div>
+        <div style={{ 
+          background: '#dbeafe', 
+          padding: '8px', 
+          borderRadius: '4px', 
+          textAlign: 'center' 
+        }}>
+          <div style={{ fontSize: '18px', fontWeight: '700', color: '#1e40af' }}>
+            {analysis.review_burden.time_saved_percent}%
+          </div>
           <div style={{ fontSize: '9px', color: '#1e40af' }}>Saved</div>
         </div>
       </div>
@@ -365,7 +457,16 @@ const TRUSTAnalysisPanel = ({ analysis, loading, onClose }) => {
       {analysis.review_queue && analysis.review_queue.length > 0 && (
         <div style={{ maxHeight: '120px', overflow: 'auto', borderTop: '1px solid #e2e8f0' }}>
           {analysis.review_queue.slice(0, 5).map((item, idx) => (
-            <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 16px', fontSize: '11px', borderBottom: '1px solid #f1f5f9' }}>
+            <div 
+              key={idx} 
+              style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                padding: '4px 16px', 
+                fontSize: '11px', 
+                borderBottom: '1px solid #f1f5f9' 
+              }}
+            >
               <span><strong>#{item.rank}</strong> {item.claim.text}</span>
               <span style={{ color: '#64748b' }}>{item.uncertainty.review_tier.toUpperCase()}</span>
             </div>
@@ -375,6 +476,7 @@ const TRUSTAnalysisPanel = ({ analysis, loading, onClose }) => {
     </div>
   );
 };
+
 // EHR Verification Panel Component
 const EHRVerificationPanel = ({ ehrResult, loading }) => {
   if (loading) {
@@ -400,27 +502,66 @@ const EHRVerificationPanel = ({ ehrResult, loading }) => {
   return (
     <div style={{ borderTop: '2px solid #0891b2', background: '#f8fafc' }}>
       <div style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '8px', 
+          marginBottom: '8px' 
+        }}>
           <TrustMiniLogo size={18} />
           <span style={{ fontWeight: '600', color: COLORS.trustTeal }}>EHR Verification Results</span>
-          <span style={{ fontSize: '11px', color: '#64748b' }}>| Patient: {ehrResult.patient_name}</span>
+          <span style={{ fontSize: '11px', color: '#64748b' }}>
+            | Patient: {ehrResult.patient_name}
+          </span>
         </div>
         
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
-          <div style={{ background: '#dcfce7', padding: '10px', borderRadius: '6px', textAlign: 'center' }}>
-            <div style={{ fontSize: '20px', fontWeight: '700', color: '#166534' }}>{ehrResult.verified}</div>
+        <div style={{ 
+          display: 'grid', 
+          gridTemplateColumns: 'repeat(4, 1fr)', 
+          gap: '12px' 
+        }}>
+          <div style={{ 
+            background: '#dcfce7', 
+            padding: '10px', 
+            borderRadius: '6px', 
+            textAlign: 'center' 
+          }}>
+            <div style={{ fontSize: '20px', fontWeight: '700', color: '#166534' }}>
+              {ehrResult.verified}
+            </div>
             <div style={{ fontSize: '10px', color: '#166534' }}>Verified in EHR</div>
           </div>
-          <div style={{ background: '#fef3c7', padding: '10px', borderRadius: '6px', textAlign: 'center' }}>
-            <div style={{ fontSize: '20px', fontWeight: '700', color: '#92400e' }}>{ehrResult.not_in_ehr}</div>
+          <div style={{ 
+            background: '#fef3c7', 
+            padding: '10px', 
+            borderRadius: '6px', 
+            textAlign: 'center' 
+          }}>
+            <div style={{ fontSize: '20px', fontWeight: '700', color: '#92400e' }}>
+              {ehrResult.not_in_ehr}
+            </div>
             <div style={{ fontSize: '10px', color: '#92400e' }}>Not in EHR</div>
           </div>
-          <div style={{ background: '#fee2e2', padding: '10px', borderRadius: '6px', textAlign: 'center' }}>
-            <div style={{ fontSize: '20px', fontWeight: '700', color: '#991b1b' }}>{ehrResult.contradicted}</div>
+          <div style={{ 
+            background: '#fee2e2', 
+            padding: '10px', 
+            borderRadius: '6px', 
+            textAlign: 'center' 
+          }}>
+            <div style={{ fontSize: '20px', fontWeight: '700', color: '#991b1b' }}>
+              {ehrResult.contradicted}
+            </div>
             <div style={{ fontSize: '10px', color: '#991b1b' }}>Contradicted</div>
           </div>
-          <div style={{ background: '#f1f5f9', padding: '10px', borderRadius: '6px', textAlign: 'center' }}>
-            <div style={{ fontSize: '20px', fontWeight: '700', color: '#475569' }}>{ehrResult.ehr_medications_count}</div>
+          <div style={{ 
+            background: '#f1f5f9', 
+            padding: '10px', 
+            borderRadius: '6px', 
+            textAlign: 'center' 
+          }}>
+            <div style={{ fontSize: '20px', fontWeight: '700', color: '#475569' }}>
+              {ehrResult.ehr_medications_count}
+            </div>
             <div style={{ fontSize: '10px', color: '#475569' }}>EHR Meds on File</div>
           </div>
         </div>
@@ -469,6 +610,7 @@ export default function PowerChartDashboard() {
   const [aiDocuments] = useState(initialAiDocuments);
   const [ehrResult, setEhrResult] = useState(null);
   const [ehrLoading, setEhrLoading] = useState(false);
+  const [trustAnalysis, setTrustAnalysis] = useState(null);
   const [expandedSections, setExpandedSections] = useState({
     inboxItems: true,
     aiReview: true,
@@ -479,8 +621,8 @@ export default function PowerChartDashboard() {
   const toggleSection = (section) => {
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
   };
-const [trustAnalysis, setTrustAnalysis] = useState(null);
-// Run TRUST Analysis when document is selected
+
+  // Run TRUST Analysis when document is selected
   const handleSelectDoc = async (doc) => {
     setSelectedDoc(doc);
     setEhrResult(null);
@@ -527,7 +669,13 @@ const [trustAnalysis, setTrustAnalysis] = useState(null);
   const totalAI = highUncertainty + hallucinations + standardReview;
 
   return (
-    <div style={{ fontFamily: 'Segoe UI, Tahoma, sans-serif', fontSize: '12px', height: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ 
+      fontFamily: 'Segoe UI, Tahoma, sans-serif', 
+      fontSize: '12px', 
+      height: '100vh', 
+      display: 'flex', 
+      flexDirection: 'column' 
+    }}>
       {/* Title Bar - Lighter teal matching PowerChart */}
       <div style={{ 
         background: 'linear-gradient(180deg, #5ba4b0 0%, #4a939f 100%)', 
@@ -547,16 +695,44 @@ const [trustAnalysis, setTrustAnalysis] = useState(null);
             fontSize: '12px'
           }}>P</span>
         </div>
-        <span style={{ fontSize: '11px', fontWeight: '500' }}>PowerChart Organizer for Raubenheimer, Jean Louis, MD</span>
+        <span style={{ fontSize: '11px', fontWeight: '500' }}>
+          PowerChart Organizer for Raubenheimer, Jean Louis, MD
+        </span>
         <div style={{ display: 'flex', gap: '4px' }}>
-          <button style={{ width: '20px', height: '20px', background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.3)', cursor: 'pointer', color: 'white' }}>−</button>
-          <button style={{ width: '20px', height: '20px', background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.3)', cursor: 'pointer', color: 'white' }}>□</button>
-          <button style={{ width: '20px', height: '20px', background: '#c42b1c', border: '1px solid #a02218', color: 'white', cursor: 'pointer' }}>×</button>
+          <button style={{ 
+            width: '20px', 
+            height: '20px', 
+            background: 'rgba(255,255,255,0.2)', 
+            border: '1px solid rgba(255,255,255,0.3)', 
+            cursor: 'pointer', 
+            color: 'white' 
+          }}>−</button>
+          <button style={{ 
+            width: '20px', 
+            height: '20px', 
+            background: 'rgba(255,255,255,0.2)', 
+            border: '1px solid rgba(255,255,255,0.3)', 
+            cursor: 'pointer', 
+            color: 'white' 
+          }}>□</button>
+          <button style={{ 
+            width: '20px', 
+            height: '20px', 
+            background: '#c42b1c', 
+            border: '1px solid #a02218', 
+            color: 'white', 
+            cursor: 'pointer' 
+          }}>×</button>
         </div>
       </div>
 
       {/* Menu Bar */}
-      <div style={{ background: '#f8f8f8', padding: '2px 8px', borderBottom: '1px solid #ccc', fontSize: '11px' }}>
+      <div style={{ 
+        background: '#f8f8f8', 
+        padding: '2px 8px', 
+        borderBottom: '1px solid #ccc', 
+        fontSize: '11px' 
+      }}>
         <span style={{ marginRight: '16px', cursor: 'pointer' }}>Task</span>
         <span style={{ marginRight: '16px', cursor: 'pointer' }}>Edit</span>
         <span style={{ marginRight: '16px', cursor: 'pointer' }}>View</span>
@@ -569,7 +745,15 @@ const [trustAnalysis, setTrustAnalysis] = useState(null);
       </div>
 
       {/* Toolbar Row 1 */}
-      <div style={{ background: '#f0f0f0', padding: '4px 8px', borderBottom: '1px solid #ccc', display: 'flex', gap: '8px', flexWrap: 'wrap', fontSize: '10px' }}>
+      <div style={{ 
+        background: '#f0f0f0', 
+        padding: '4px 8px', 
+        borderBottom: '1px solid #ccc', 
+        display: 'flex', 
+        gap: '8px', 
+        flexWrap: 'wrap', 
+        fontSize: '10px' 
+      }}>
         <span style={{ padding: '2px 6px', cursor: 'pointer' }}>📧 Message Centre</span>
         <span style={{ padding: '2px 6px', cursor: 'pointer' }}>👤 Patient Overview</span>
         <span style={{ padding: '2px 6px', cursor: 'pointer' }}>📊 Perioperative Tracking</span>
@@ -612,7 +796,13 @@ const [trustAnalysis, setTrustAnalysis] = useState(null);
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         
         {/* Left Sidebar - Inbox Summary */}
-        <div style={{ width: '220px', borderRight: '1px solid #ccc', background: '#fafafa', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ 
+          width: '220px', 
+          borderRight: '1px solid #ccc', 
+          background: '#fafafa', 
+          display: 'flex', 
+          flexDirection: 'column' 
+        }}>
           
           {/* Message Centre Header - Blue to match PowerChart */}
           <div style={{ 
@@ -651,12 +841,30 @@ const [trustAnalysis, setTrustAnalysis] = useState(null);
             }}>
               Inbox
             </div>
-            <div style={{ flex: 1, padding: '6px', textAlign: 'center', background: '#f0f0f0', cursor: 'pointer' }}>Proxies</div>
-            <div style={{ flex: 1, padding: '6px', textAlign: 'center', background: '#f0f0f0', cursor: 'pointer' }}>Pools</div>
+            <div style={{ 
+              flex: 1, 
+              padding: '6px', 
+              textAlign: 'center', 
+              background: '#f0f0f0', 
+              cursor: 'pointer' 
+            }}>Proxies</div>
+            <div style={{ 
+              flex: 1, 
+              padding: '6px', 
+              textAlign: 'center', 
+              background: '#f0f0f0', 
+              cursor: 'pointer' 
+            }}>Pools</div>
           </div>
 
           {/* Display Filter */}
-          <div style={{ padding: '8px 12px', borderBottom: '1px solid #ddd', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ 
+            padding: '8px 12px', 
+            borderBottom: '1px solid #ddd', 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '8px' 
+          }}>
             <span>Display:</span>
             <select style={{ flex: 1, padding: '2px 4px', fontSize: '11px' }}>
               <option>Last 90 Days</option>
@@ -669,7 +877,7 @@ const [trustAnalysis, setTrustAnalysis] = useState(null);
           {/* Folder Tree */}
           <div style={{ flex: 1, overflow: 'auto', padding: '4px 0' }}>
             
-            {/* AI Review Section - NEW */}
+            {/* AI Review Section */}
             <div>
               <div 
                 onClick={() => toggleSection('aiReview')}
@@ -679,13 +887,15 @@ const [trustAnalysis, setTrustAnalysis] = useState(null);
                   display: 'flex',
                   alignItems: 'center',
                   gap: '4px',
-                  background: '#e8f4f8',
+                  background: 'rgba(8, 145, 178, 0.05)',
                   borderLeft: '3px solid #0891b2'
                 }}
               >
                 <span>{expandedSections.aiReview ? '▼' : '▶'}</span>
                 <TrustMiniLogo size={14} />
-                <span style={{ fontWeight: '600', color: '#0891b2' }}>AI Documents ({totalAI})</span>
+                <span style={{ fontWeight: '600', color: '#0891b2' }}>
+                  AI Documents ({totalAI})
+                </span>
               </div>
               {expandedSections.aiReview && (
                 <div style={{ marginLeft: '20px' }}>
@@ -695,7 +905,7 @@ const [trustAnalysis, setTrustAnalysis] = useState(null);
                       padding: '3px 12px', 
                       cursor: 'pointer',
                       background: selectedFolder === 'High Uncertainty' ? COLORS.selectedBlue : 'transparent',
-                      color: selectedFolder === 'High Uncertainty' ? 'white' : highUncertainty > 0 ? '#d97706' : 'inherit',
+                      color: selectedFolder === 'High Uncertainty' ? 'white' : highUncertainty > 0 ? '#92400e' : 'inherit',
                       fontWeight: highUncertainty > 0 ? '600' : 'normal'
                     }}
                   >
@@ -707,7 +917,7 @@ const [trustAnalysis, setTrustAnalysis] = useState(null);
                       padding: '3px 12px', 
                       cursor: 'pointer',
                       background: selectedFolder === 'Hallucination Flagged' ? COLORS.selectedBlue : 'transparent',
-                      color: selectedFolder === 'Hallucination Flagged' ? 'white' : hallucinations > 0 ? '#dc2626' : 'inherit',
+                      color: selectedFolder === 'Hallucination Flagged' ? 'white' : hallucinations > 0 ? '#991b1b' : 'inherit',
                       fontWeight: hallucinations > 0 ? '600' : 'normal'
                     }}
                   >
@@ -732,7 +942,13 @@ const [trustAnalysis, setTrustAnalysis] = useState(null);
             <div>
               <div 
                 onClick={() => toggleSection('inboxItems')}
-                style={{ padding: '4px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                style={{ 
+                  padding: '4px 12px', 
+                  cursor: 'pointer', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '4px' 
+                }}
               >
                 <span>{expandedSections.inboxItems ? '▼' : '▶'}</span>
                 <span>Inbox Items (4)</span>
@@ -752,8 +968,18 @@ const [trustAnalysis, setTrustAnalysis] = useState(null);
                   >
                     ▼ Documents (4/4)
                   </div>
-                  <div style={{ marginLeft: '16px', padding: '2px 12px', cursor: 'pointer', fontSize: '11px' }}>Sign (3/3)</div>
-                  <div style={{ marginLeft: '16px', padding: '2px 12px', cursor: 'pointer', fontSize: '11px' }}>Review (1/1)</div>
+                  <div style={{ 
+                    marginLeft: '16px', 
+                    padding: '2px 12px', 
+                    cursor: 'pointer', 
+                    fontSize: '11px' 
+                  }}>Sign (3/3)</div>
+                  <div style={{ 
+                    marginLeft: '16px', 
+                    padding: '2px 12px', 
+                    cursor: 'pointer', 
+                    fontSize: '11px' 
+                  }}>Review (1/1)</div>
                   <div style={{ padding: '3px 12px', cursor: 'pointer' }}>Messages</div>
                   <div style={{ padding: '3px 12px', cursor: 'pointer' }}>Results FYI</div>
                 </div>
@@ -764,7 +990,13 @@ const [trustAnalysis, setTrustAnalysis] = useState(null);
             <div>
               <div 
                 onClick={() => toggleSection('workItems')}
-                style={{ padding: '4px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                style={{ 
+                  padding: '4px 12px', 
+                  cursor: 'pointer', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '4px' 
+                }}
               >
                 <span>{expandedSections.workItems ? '▼' : '▶'}</span>
                 <span>Work Items (0)</span>
@@ -782,7 +1014,13 @@ const [trustAnalysis, setTrustAnalysis] = useState(null);
             <div>
               <div 
                 onClick={() => toggleSection('notifications')}
-                style={{ padding: '4px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                style={{ 
+                  padding: '4px 12px', 
+                  cursor: 'pointer', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '4px' 
+                }}
               >
                 <span>{expandedSections.notifications ? '▼' : '▶'}</span>
                 <span>Notifications</span>
@@ -799,7 +1037,12 @@ const [trustAnalysis, setTrustAnalysis] = useState(null);
         </div>
 
         {/* Main Content Area */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'white' }}>
+        <div style={{ 
+          flex: 1, 
+          display: 'flex', 
+          flexDirection: 'column', 
+          background: 'white' 
+        }}>
           
           {/* Content Header */}
           <div style={{ 
@@ -821,15 +1064,62 @@ const [trustAnalysis, setTrustAnalysis] = useState(null);
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
               <thead>
                 <tr style={{ background: '#f0f0f0', position: 'sticky', top: 0 }}>
-                  <th style={{ padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid #ccc', fontWeight: '600' }}>Patient Name</th>
-                  <th style={{ padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid #ccc', fontWeight: '600' }}>From</th>
-                  <th style={{ padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid #ccc', fontWeight: '600' }}>Subject</th>
-                  <th style={{ padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid #ccc', fontWeight: '600' }}>Description</th>
-                  <th style={{ padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid #ccc', fontWeight: '600' }}>Create Date</th>
-                  <th style={{ padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid #ccc', fontWeight: '600' }}>Status</th>
-                  <th style={{ padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid #ccc', fontWeight: '600', color: '#0891b2' }}>AI Confidence</th>
-                  <th style={{ padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid #ccc', fontWeight: '600', color: '#0891b2' }}>Review Level</th>
-                  <th style={{ padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid #ccc', fontWeight: '600' }}>Assigned</th>
+                  <th style={{ 
+                    padding: '6px 8px', 
+                    textAlign: 'left', 
+                    borderBottom: '1px solid #ccc', 
+                    fontWeight: '600' 
+                  }}>Patient Name</th>
+                  <th style={{ 
+                    padding: '6px 8px', 
+                    textAlign: 'left', 
+                    borderBottom: '1px solid #ccc', 
+                    fontWeight: '600' 
+                  }}>From</th>
+                  <th style={{ 
+                    padding: '6px 8px', 
+                    textAlign: 'left', 
+                    borderBottom: '1px solid #ccc', 
+                    fontWeight: '600' 
+                  }}>Subject</th>
+                  <th style={{ 
+                    padding: '6px 8px', 
+                    textAlign: 'left', 
+                    borderBottom: '1px solid #ccc', 
+                    fontWeight: '600' 
+                  }}>Description</th>
+                  <th style={{ 
+                    padding: '6px 8px', 
+                    textAlign: 'left', 
+                    borderBottom: '1px solid #ccc', 
+                    fontWeight: '600' 
+                  }}>Create Date</th>
+                  <th style={{ 
+                    padding: '6px 8px', 
+                    textAlign: 'left', 
+                    borderBottom: '1px solid #ccc', 
+                    fontWeight: '600' 
+                  }}>Status</th>
+                  <th style={{ 
+                    padding: '6px 8px', 
+                    textAlign: 'left', 
+                    borderBottom: '1px solid #ccc', 
+                    fontWeight: '600', 
+                    color: '#0891b2' 
+                  }}>Semantic Entropy</th>
+                  <th style={{ 
+                    padding: '6px 8px', 
+                    textAlign: 'left', 
+                    borderBottom: '1px solid #ccc', 
+                    fontWeight: '600', 
+                    color: '#0891b2' 
+                  }}>Review Level</th>
+                  <th style={{ 
+                    padding: '6px 8px', 
+                    textAlign: 'left', 
+                    borderBottom: '1px solid #ccc', 
+                    fontWeight: '600' 
+                  }}>Assigned</th>
                 </tr>
               </thead>
               <tbody>
@@ -844,21 +1134,33 @@ const [trustAnalysis, setTrustAnalysis] = useState(null);
                                   doc.type === 'HIGH_UNCERTAINTY' ? '3px solid #f59e0b' : 'none'
                     }}
                   >
-                    <td style={{ padding: '6px 8px', borderBottom: '1px solid #eee' }}>{doc.patientName}</td>
-                    <td style={{ padding: '6px 8px', borderBottom: '1px solid #eee' }}>{doc.from}</td>
-                    <td style={{ padding: '6px 8px', borderBottom: '1px solid #eee' }}>{doc.subject}</td>
-                    <td style={{ padding: '6px 8px', borderBottom: '1px solid #eee' }}>{doc.description}</td>
-                    <td style={{ padding: '6px 8px', borderBottom: '1px solid #eee' }}>{doc.createDate}</td>
+                    <td style={{ padding: '6px 8px', borderBottom: '1px solid #eee' }}>
+                      {doc.patientName}
+                    </td>
+                    <td style={{ padding: '6px 8px', borderBottom: '1px solid #eee' }}>
+                      {doc.from}
+                    </td>
+                    <td style={{ padding: '6px 8px', borderBottom: '1px solid #eee' }}>
+                      {doc.subject}
+                    </td>
+                    <td style={{ padding: '6px 8px', borderBottom: '1px solid #eee' }}>
+                      {doc.description}
+                    </td>
+                    <td style={{ padding: '6px 8px', borderBottom: '1px solid #eee' }}>
+                      {doc.createDate}
+                    </td>
                     <td style={{ padding: '6px 8px', borderBottom: '1px solid #eee' }}>
                       <StatusBadge status={doc.status} type={doc.type} />
                     </td>
                     <td style={{ padding: '6px 8px', borderBottom: '1px solid #eee' }}>
-                      <ConfidenceBadge confidence={doc.confidence} semanticEntropy={doc.semanticEntropy} />
+                      <SemanticEntropyBadge semanticEntropy={doc.semanticEntropy} />
                     </td>
                     <td style={{ padding: '6px 8px', borderBottom: '1px solid #eee' }}>
                       <ReviewBadge level={doc.reviewLevel} />
                     </td>
-                    <td style={{ padding: '6px 8px', borderBottom: '1px solid #eee' }}>{doc.assigned}</td>
+                    <td style={{ padding: '6px 8px', borderBottom: '1px solid #eee' }}>
+                      {doc.assigned}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -866,52 +1168,96 @@ const [trustAnalysis, setTrustAnalysis] = useState(null);
           </div>
 
           {/* Detail Panel - Shows when document selected */}
-          {selectedDoc && selectedDoc.confidence !== null && (
+          {selectedDoc && selectedDoc.semanticEntropy !== null && (
             <div style={{ 
               borderTop: '2px solid #0891b2', 
-              background: 'linear-gradient(180deg, #f0f9ff 0%, #ffffff 100%)',
+              background: 'linear-gradient(180deg, rgba(240, 249, 255, 0.5) 0%, #ffffff 100%)',
             }}>
               <div style={{ padding: '16px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div style={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'flex-start' 
+                }}>
                   <div>
-                    <h3 style={{ margin: '0 0 8px 0', color: '#0891b2', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <h3 style={{ 
+                      margin: '0 0 8px 0', 
+                      color: '#0891b2', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '8px', 
+                      fontSize: '14px' 
+                    }}>
                       <TrustMiniLogo size={20} />
                       TRUST AI Analysis
                     </h3>
-                    <p style={{ margin: '4px 0', fontSize: '12px' }}>
-                      <strong>Patient:</strong> {selectedDoc.patientName} | <strong>Document:</strong> {selectedDoc.subject}
+                    <p style={{ margin: '4px 0', fontSize: '11px', color: '#374151' }}>
+                      <span style={{ fontWeight: '600' }}>Patient:</span> {selectedDoc.patientName} 
+                      &nbsp;|&nbsp; 
+                      <span style={{ fontWeight: '600' }}>Document:</span> {selectedDoc.subject}
                     </p>
                   </div>
                   <div style={{ textAlign: 'right' }}>
                     <div style={{ 
                       fontSize: '24px', 
                       fontWeight: 'bold', 
-                      color: selectedDoc.confidence >= 90 ? '#10b981' : selectedDoc.confidence >= 75 ? '#f59e0b' : '#ef4444'
+                      color: selectedDoc.semanticEntropy <= 0.3 ? '#10b981' : 
+                             selectedDoc.semanticEntropy <= 0.6 ? '#f59e0b' : '#ef4444'
                     }}>
-                      {selectedDoc.confidence}%
+                      {selectedDoc.semanticEntropy?.toFixed(2)}
                     </div>
-                    <div style={{ fontSize: '10px', color: '#666' }}>Confidence Score</div>
+                    <div style={{ fontSize: '10px', color: '#6b7280' }}>Semantic Entropy</div>
                   </div>
                 </div>
                 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginTop: '12px' }}>
-                  <div style={{ background: 'white', padding: '10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase' }}>Semantic Entropy</div>
-                    <div style={{ fontSize: '16px', fontWeight: '600', color: selectedDoc.semanticEntropy > 0.5 ? '#f59e0b' : '#10b981' }}>
-                      {selectedDoc.semanticEntropy?.toFixed(2) || '—'}
+                {/* Simplified 2-column grid */}
+                <div style={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: 'repeat(2, 1fr)', 
+                  gap: '16px', 
+                  marginTop: '12px' 
+                }}>
+                  <div style={{ 
+                    background: 'rgba(255,255,255,0.8)', 
+                    padding: '10px', 
+                    borderRadius: '6px', 
+                    border: '1px solid #e5e7eb' 
+                  }}>
+                    <div style={{ 
+                      fontSize: '10px', 
+                      color: '#6b7280', 
+                      textTransform: 'uppercase', 
+                      letterSpacing: '0.5px' 
+                    }}>Uncertainty Level</div>
+                    <div style={{ 
+                      fontSize: '14px', 
+                      fontWeight: '600', 
+                      color: selectedDoc.semanticEntropy > 0.6 ? '#991b1b' : 
+                             selectedDoc.semanticEntropy > 0.3 ? '#92400e' : '#166534', 
+                      marginTop: '2px' 
+                    }}>
+                      {selectedDoc.semanticEntropy <= 0.3 ? 'Low' : 
+                       selectedDoc.semanticEntropy <= 0.6 ? 'Medium' : 'High'} ({selectedDoc.semanticEntropy?.toFixed(2)})
                     </div>
                   </div>
-                  <div style={{ background: 'white', padding: '10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase' }}>Review Level</div>
-                    <div style={{ fontSize: '16px', fontWeight: '600' }}>{selectedDoc.reviewLevel}</div>
-                  </div>
-                  <div style={{ background: 'white', padding: '10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase' }}>Detection Method</div>
-                    <div style={{ fontSize: '12px', fontWeight: '500' }}>SE + EHR Verify</div>
-                  </div>
-                  <div style={{ background: 'white', padding: '10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase' }}>Audit Trail</div>
-                    <div style={{ fontSize: '12px', fontWeight: '500', color: '#0891b2', cursor: 'pointer' }}>View Log →</div>
+                  <div style={{ 
+                    background: 'rgba(255,255,255,0.8)', 
+                    padding: '10px', 
+                    borderRadius: '6px', 
+                    border: '1px solid #e5e7eb' 
+                  }}>
+                    <div style={{ 
+                      fontSize: '10px', 
+                      color: '#6b7280', 
+                      textTransform: 'uppercase', 
+                      letterSpacing: '0.5px' 
+                    }}>Review Level</div>
+                    <div style={{ 
+                      fontSize: '14px', 
+                      fontWeight: '600', 
+                      color: '#374151', 
+                      marginTop: '2px' 
+                    }}>{selectedDoc.reviewLevel}</div>
                   </div>
                 </div>
 
@@ -919,12 +1265,13 @@ const [trustAnalysis, setTrustAnalysis] = useState(null);
                   <div style={{ 
                     marginTop: '12px', 
                     padding: '10px', 
-                    background: '#fef2f2', 
+                    background: 'rgba(254, 242, 242, 0.8)', 
                     border: '1px solid #fecaca',
                     borderRadius: '6px',
-                    color: '#991b1b'
+                    color: '#991b1b',
+                    fontSize: '11px'
                   }}>
-                    <strong>⚠️ Alert:</strong> {selectedDoc.flagReason}
+                    <span style={{ fontWeight: '600' }}>⚠ Alert:</span> {selectedDoc.flagReason}
                   </div>
                 )}
 
@@ -936,7 +1283,8 @@ const [trustAnalysis, setTrustAnalysis] = useState(null);
                     border: 'none', 
                     borderRadius: '4px',
                     cursor: 'pointer',
-                    fontWeight: '600'
+                    fontWeight: '600',
+                    fontSize: '11px'
                   }}>
                     ✓ Approve & Sign
                   </button>
@@ -946,25 +1294,37 @@ const [trustAnalysis, setTrustAnalysis] = useState(null);
                     color: '#0891b2', 
                     border: '1px solid #0891b2', 
                     borderRadius: '4px',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    fontSize: '11px'
                   }}>
                     🔍 Open for Detailed Review
                   </button>
                   <button style={{ 
                     padding: '8px 16px', 
                     background: 'white', 
-                    color: '#dc2626', 
-                    border: '1px solid #dc2626', 
+                    color: '#991b1b', 
+                    border: '1px solid #fecaca', 
                     borderRadius: '4px',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    fontSize: '11px'
                   }}>
                     ✗ Reject with Comment
                   </button>
                 </div>
               </div>
-              <TRUSTAnalysisPanel analysis={trustAnalysis} loading={ehrLoading} onClose={() => setTrustAnalysis(null)} />
+              
+              {/* TRUST Analysis Panel */}
+              <TRUSTAnalysisPanel 
+                analysis={trustAnalysis} 
+                loading={ehrLoading} 
+                onClose={() => setTrustAnalysis(null)} 
+              />
+              
               {/* EHR Verification Panel */}
-              <EHRVerificationPanel ehrResult={ehrResult} loading={ehrLoading} />
+              <EHRVerificationPanel 
+                ehrResult={ehrResult} 
+                loading={ehrLoading} 
+              />
             </div>
           )}
         </div>
@@ -978,7 +1338,7 @@ const [trustAnalysis, setTrustAnalysis] = useState(null);
         display: 'flex',
         justifyContent: 'space-between',
         fontSize: '10px',
-        color: '#666'
+        color: '#6b7280'
       }}>
         <span>Clinical link on P0783 JRAUBENHEIMER | TRUST Platform v0.2.0 | Cerner FHIR Connected</span>
         <span>{new Date().toLocaleString()}</span>
