@@ -226,19 +226,19 @@ class EntailmentClassifier:
     
     def check_entailment(self, premise: str, hypothesis: str) -> Tuple[str, float]:
         """Check if premise entails hypothesis."""
-    classifier = self._get_classifier()
-    
-    # Cross-encoder expects: "premise [SEP] hypothesis"
-    result = classifier(f"{premise} [SEP] {hypothesis}")
-    
-    # Handle result format
-    if isinstance(result, list):
-        result = result[0]
-    
-    label = result['label'].upper()
-    score = result['score']
-    
-    return label, score
+        classifier = self._get_classifier()
+        
+        # Cross-encoder expects: "premise [SEP] hypothesis"
+        result = classifier(f"{premise} [SEP] {hypothesis}")
+        
+        # Handle result format
+        if isinstance(result, list):
+            result = result[0]
+        
+        label = result['label'].upper()
+        score = result['score']
+        
+        return label, score
     
     def check_bidirectional_entailment(
         self, 
