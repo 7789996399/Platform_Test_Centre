@@ -194,7 +194,7 @@ class EntailmentClassifier:
     
     # Use small model for P1v2 App Service (140MB, fits in 3.5GB RAM)
     # TODO: Upgrade to "microsoft/deberta-v3-large-mnli" when moving to Azure ML Endpoint
-    DEFAULT_MODEL = "cross-encoder/nli-deberta-v3-small"
+    DEFAULT_MODEL = "cross-encoder/nli-distilroberta-base"
     
     def __init__(self, model_name: str = None):
         self.model_name = model_name or self.DEFAULT_MODEL
