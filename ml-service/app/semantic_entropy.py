@@ -225,7 +225,7 @@ class EntailmentClassifier:
         return EntailmentClassifier._shared_classifier
     
     def check_entailment(self, premise: str, hypothesis: str) -> Tuple[str, float]:
-  
+        """Check if premise entails hypothesis."""
     classifier = self._get_classifier()
     
     # Cross-encoder expects: "premise [SEP] hypothesis"
