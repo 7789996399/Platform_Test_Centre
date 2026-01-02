@@ -154,16 +154,19 @@ Answer:"""
 
 
 def _generate_mock_responses(prompt: str, num_samples: int) -> List[str]:
-    """Generate mock responses for testing"""
-    # Simulate some variation
-    base_responses = [
-        "Metoprolol 50mg twice daily",
-        "Metoprolol 50mg BID, Lisinopril 10mg daily",
-        "Beta blocker (Metoprolol) and ACE inhibitor",
-        "Metoprolol 25mg BID",  # Different dose - should be different cluster
-        "Patient is on Metoprolol 50mg",
+    """
+    Generate mock responses for testing WITHOUT loading any models.
+    Returns intentionally varied responses to test entropy calculation.
+    """
+    # Simulate realistic variation in medical responses
+    mock_variations = [
+        f"{prompt}",
+        f"{prompt}, as documented",
+        f"The patient is prescribed {prompt.replace('Patient is on ', '').replace('Patient on ', '')}",
+        f"{prompt} per medication list",
+        f"Current medication includes {prompt.replace('Patient is on ', '').replace('Patient on ', '')}",
     ]
-    return base_responses[:num_samples]
+    return mock_variations[:num_samples]
 
 
 # =============================================================================
@@ -172,7 +175,11 @@ def _generate_mock_responses(prompt: str, num_samples: int) -> List[str]:
 
 class EntailmentClassifier:
     """
-    Bidirectional entailment using DeBERTa-large-MNLI
+    Bidirectional entailment using DeBERTa-v3-small-MNLI
+    
+    Model choice rationale:
+    - deberta-v3-small: 140MB, 88.4% accuracy, fits P1v2 App Service
+    - Future: Upgrade to Azure ML Endpoint with deberta-v3-large for pilot
     
     Two texts are semantically equivalent if:
     - A entails B (A → B)  AND
@@ -181,21 +188,41 @@ class EntailmentClassifier:
     This is stricter than just similarity - it requires mutual implication.
     """
     
-    def __init__(self, model_name: str = "microsoft/deberta-large-mnli"):
-        self.model_name = model_name
-        self._classifier = None
+    # Class-level model instance (shared across requests, loaded once at startup)
+    _shared_classifier = None
+    _model_loaded = False
     
-    def _load_classifier(self):
-        """Lazy load the classifier"""
-        if self._classifier is None:
+    # Use small model for P1v2 App Service (140MB, fits in 3.5GB RAM)
+    # TODO: Upgrade to "microsoft/deberta-v3-large-mnli" when moving to Azure ML Endpoint
+    DEFAULT_MODEL = "MoritzLaworski/deberta-v3-small-mnli"
+    
+    def __init__(self, model_name: str = None):
+        self.model_name = model_name or self.DEFAULT_MODEL
+    
+    @classmethod
+    def preload_model(cls, model_name: str = None):
+        """
+        Pre-load the model at startup to avoid cold-start latency.
+        Call this from FastAPI's startup event.
+        """
+        if cls._shared_classifier is None:
             from transformers import pipeline
-            logger.info(f"Loading entailment model: {self.model_name}")
-            self._classifier = pipeline(
-                "text-classification",
-                model=self.model_name,
-                device=-1  # CPU, use 0 for GPU
+            model = model_name or cls.DEFAULT_MODEL
+            logger.info(f"Pre-loading entailment model: {model}")
+            cls._shared_classifier = pipeline(
+                "zero-shot-classification",
+                model=model,
+                device=-1  # CPU
             )
-        return self._classifier
+            cls._model_loaded = True
+            logger.info(f"Model loaded successfully: {model}")
+        return cls._shared_classifier
+    
+    def _get_classifier(self):
+        """Get the shared classifier, loading if necessary"""
+        if EntailmentClassifier._shared_classifier is None:
+            EntailmentClassifier.preload_model(self.model_name)
+        return EntailmentClassifier._shared_classifier
     
     def check_entailment(self, premise: str, hypothesis: str) -> Tuple[str, float]:
         """
@@ -204,16 +231,26 @@ class EntailmentClassifier:
         Returns:
             (label, confidence) where label is 'ENTAILMENT', 'CONTRADICTION', or 'NEUTRAL'
         """
-        classifier = self._load_classifier()
+        classifier = self._get_classifier()
         
-        # DeBERTa-MNLI expects: "[CLS] premise [SEP] hypothesis [SEP]"
-        result = classifier(f"{premise} [SEP] {hypothesis}")
+        # Use zero-shot classification with entailment labels
+        result = classifier(
+            premise,
+            candidate_labels=[hypothesis],
+            hypothesis_template="{}",
+            multi_label=False
+        )
         
-        # Handle different output formats
-        if isinstance(result, list):
-            result = result[0]
+        # Score > 0.5 means entailment, < 0.5 means not entailed
+        score = result['scores'][0]
+        if score > 0.7:
+            label = 'ENTAILMENT'
+        elif score < 0.3:
+            label = 'CONTRADICTION'
+        else:
+            label = 'NEUTRAL'
         
-        return result['label'].upper(), result['score']
+        return label, score
     
     def check_bidirectional_entailment(
         self, 
@@ -239,6 +276,11 @@ class EntailmentClassifier:
             return False
         
         return True
+    
+    @classmethod
+    def is_loaded(cls) -> bool:
+        """Check if model is loaded"""
+        return cls._model_loaded
 
 
 def cluster_by_bidirectional_entailment(

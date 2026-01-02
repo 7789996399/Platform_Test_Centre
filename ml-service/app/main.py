@@ -1,28 +1,80 @@
 """
 TRUST ML Service
 Handles heavy AI workloads: semantic entropy, embeddings, hallucination detection
+
+Model Loading Strategy:
+- Models are pre-loaded at startup to avoid cold-start latency
+- Currently using DeBERTa-v3-small for P1v2 App Service (140MB, fits in 3.5GB RAM)
+- TODO: Upgrade to Azure ML Endpoint with DeBERTa-v3-large for pilot
 """
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
-from .uncertainty import calculate_uncertainty, medical_adjusted_uncertainty
+from contextlib import asynccontextmanager
+import logging
 import os
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# =============================================================================
+# STARTUP: Pre-load models to avoid cold-start latency
+# =============================================================================
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Pre-load ML models at startup"""
+    logger.info("🚀 Starting TRUST ML Service...")
+    
+    # Pre-load entailment model (DeBERTa-v3-small)
+    try:
+        from .semantic_entropy import EntailmentClassifier
+        logger.info("📦 Pre-loading entailment model...")
+        EntailmentClassifier.preload_model()
+        logger.info("✅ Entailment model loaded successfully")
+    except Exception as e:
+        logger.warning(f"⚠️ Could not pre-load entailment model: {e}")
+    
+    # Pre-load sentence transformer for embeddings
+    try:
+        from sentence_transformers import SentenceTransformer
+        logger.info("📦 Pre-loading sentence transformer...")
+        global sentence_model
+        sentence_model = SentenceTransformer('all-MiniLM-L6-v2')
+        logger.info("✅ Sentence transformer loaded successfully")
+    except Exception as e:
+        logger.warning(f"⚠️ Could not pre-load sentence transformer: {e}")
+    
+    logger.info("🟢 TRUST ML Service ready!")
+    
+    yield  # App runs here
+    
+    logger.info("🔴 Shutting down TRUST ML Service...")
+
 
 app = FastAPI(
     title="TRUST ML Service",
-    description="AI/ML processing for TRUST Platform",
-    version="0.1.0"
+    description="AI/ML processing for TRUST Platform - Semantic Entropy & Hallucination Detection",
+    version="0.2.0",
+    lifespan=lifespan
 )
+
+# Global model reference (set during startup)
+sentence_model = None
 
 # CORS - allow API backend to call us
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "https://trust-api-phc.azurewebsites.net",
         "https://api.trustplatform.ca",
         "https://www.trustplatform.ca",
+        "https://trustplatform.ca",
         "http://localhost:8000",
+        "http://localhost:3000",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -33,12 +85,17 @@ app.add_middleware(
 
 class SemanticEntropyRequest(BaseModel):
     text: str
+    context: str = ""
     num_samples: int = 5
-    model: str = "local"  # "local", "openai", "anthropic"
+    model: str = "openai"  # "openai", "anthropic", "mock"
 
 class SemanticEntropyResponse(BaseModel):
     entropy: float
+    normalized_entropy: float
     confidence: float
+    num_clusters: int
+    num_samples: int
+    cluster_sizes: List[int]
     samples: List[str]
     processing_time_ms: float
 
@@ -61,30 +118,47 @@ class HealthResponse(BaseModel):
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
     """Health check endpoint"""
+    from .semantic_entropy import EntailmentClassifier
+    
+    models_loaded = []
+    if sentence_model is not None:
+        models_loaded.append("sentence-transformers")
+    if EntailmentClassifier.is_loaded():
+        models_loaded.append("deberta-v3-small-mnli")
+    
     return {
         "status": "healthy",
         "timestamp": datetime.utcnow().isoformat(),
-        "version": "0.1.0",
-        "models_loaded": ["sentence-transformers"]  # Will update when models load
+        "version": "0.2.0",
+        "models_loaded": models_loaded
     }
 
 # ============== Semantic Entropy ==============
 
 @app.post("/analyze/semantic-entropy", response_model=SemanticEntropyResponse)
-async def calculate_semantic_entropy(request: SemanticEntropyRequest):
+async def calculate_semantic_entropy_endpoint(request: SemanticEntropyRequest):
     """
     Calculate semantic entropy for hallucination detection.
+    
+    Based on Farquhar et al. methodology:
+    1. Generate N responses to the same prompt
+    2. Cluster by bidirectional entailment
+    3. Calculate entropy across clusters
+    
     Lower entropy = more consistent = likely accurate
     Higher entropy = inconsistent = possible hallucination
+    
+    NOTE: Only called for claims that FAILED EHR verification (EHR-First approach)
     """
     import time
     start = time.time()
     
     try:
-        from .semantic_entropy import calculate_entropy
+        from .semantic_entropy import calculate_semantic_entropy
         
-        result = await calculate_entropy(
-            text=request.text,
+        result = await calculate_semantic_entropy(
+            prompt=request.text,
+            context=request.context,
             num_samples=request.num_samples,
             model=request.model
         )
@@ -92,12 +166,17 @@ async def calculate_semantic_entropy(request: SemanticEntropyRequest):
         processing_time = (time.time() - start) * 1000
         
         return {
-            "entropy": result["entropy"],
-            "confidence": result["confidence"],
-            "samples": result["samples"],
+            "entropy": result.entropy,
+            "normalized_entropy": result.normalized_entropy,
+            "confidence": result.confidence,
+            "num_clusters": result.num_clusters,
+            "num_samples": result.num_samples,
+            "cluster_sizes": result.cluster_sizes,
+            "samples": result.samples,
             "processing_time_ms": processing_time
         }
     except Exception as e:
+        logger.error(f"Semantic entropy error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # ============== Embeddings ==============
@@ -106,10 +185,12 @@ async def calculate_semantic_entropy(request: SemanticEntropyRequest):
 async def generate_embeddings(request: EmbeddingRequest):
     """Generate text embeddings for similarity comparison"""
     try:
-        from sentence_transformers import SentenceTransformer
+        global sentence_model
+        if sentence_model is None:
+            from sentence_transformers import SentenceTransformer
+            sentence_model = SentenceTransformer('all-MiniLM-L6-v2')
         
-        model = SentenceTransformer('all-MiniLM-L6-v2')
-        embeddings = model.encode(request.texts).tolist()
+        embeddings = sentence_model.encode(request.texts).tolist()
         
         return {
             "embeddings": embeddings,
@@ -117,6 +198,7 @@ async def generate_embeddings(request: EmbeddingRequest):
             "dimensions": len(embeddings[0]) if embeddings else 0
         }
     except Exception as e:
+        logger.error(f"Embedding error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # ============== Hallucination Detection ==============
@@ -124,92 +206,75 @@ async def generate_embeddings(request: EmbeddingRequest):
 class HallucinationRequest(BaseModel):
     claim: str
     context: str
+    ehr_verification: Optional[dict] = None
     
 class HallucinationResponse(BaseModel):
     is_hallucination: bool
+    risk_level: str
     confidence: float
+    semantic_entropy: float
+    ehr_status: str
     reasoning: str
+    review_level: str
 
 @app.post("/analyze/hallucination", response_model=HallucinationResponse)
-async def detect_hallucination(request: HallucinationRequest):
+async def detect_hallucination_endpoint(request: HallucinationRequest):
     """
-    Detect if a claim is a hallucination given the context.
-    Uses NLI (Natural Language Inference) approach.
+    Detect if a claim is a hallucination using multi-layer approach:
+    1. EHR Verification (should be done before calling this endpoint)
+    2. Semantic Entropy
+    3. Confident Hallucinator Detection
+    
+    NOTE: This endpoint should only be called for claims that FAILED EHR verification
     """
     try:
-        from .hallucination import detect
+        from .hallucination import detect_hallucination
         
-        result = await detect(
+        result = await detect_hallucination(
             claim=request.claim,
-            context=request.context
+            context=request.context,
+            ehr_verification=request.ehr_verification,
+            calculate_entropy=True
         )
         
-        return result
+        return {
+            "is_hallucination": result.is_hallucination,
+            "risk_level": result.risk_level.value,
+            "confidence": result.confidence,
+            "semantic_entropy": result.semantic_entropy,
+            "ehr_status": result.ehr_status.value,
+            "reasoning": result.reasoning,
+            "review_level": result.review_level
+        }
     except Exception as e:
+        logger.error(f"Hallucination detection error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-    
-# ============== Uncertainty Quantification ==============
 
-class UncertaintyRequest(BaseModel):
-    text: str
-    method: str = "calibrated"  # "ensemble", "token_probability", "calibrated"
-    num_samples: int = 5
-    medical_context: bool = True
+# ============== Batch Analysis ==============
 
-class UncertaintyResponse(BaseModel):
-    uncertainty: float
-    calibrated_confidence: float
-    method: str
-    review_level: str
-    details: dict
+class BatchAnalysisRequest(BaseModel):
+    claims: List[dict]  # [{"text": "...", "claim_type": "medication"}, ...]
+    context: str
+    ehr_data: Optional[dict] = None
 
-@app.post("/analyze/uncertainty", response_model=UncertaintyResponse)
-async def analyze_uncertainty(request: UncertaintyRequest):
+@app.post("/analyze/batch")
+async def analyze_claims_batch(request: BatchAnalysisRequest):
     """
-    Calculate calibrated uncertainty for AI-generated text.
-    Based on Paper 2 methodology.
-    
-    Methods:
-    - ensemble: Multiple sample variance (most robust)
-    - token_probability: Linguistic hedging analysis
-    - calibrated: Combined approach with calibration curve
+    Analyze multiple claims from an AI-generated note.
+    Uses EHR-First approach: only runs SE on unverified claims.
     """
-    import time
-    start = time.time()
-    
     try:
-        result = await calculate_uncertainty(
-            text=request.text,
-            method=request.method,
-            num_samples=request.num_samples
+        from .hallucination import analyze_claims
+        
+        result = await analyze_claims(
+            claims=request.claims,
+            context=request.context,
+            ehr_data=request.ehr_data
         )
         
-        # Apply medical adjustment if requested
-        if request.medical_context:
-            result["uncertainty"] = await medical_adjusted_uncertainty(
-                request.text, 
-                result["uncertainty"]
-            )
-            result["calibrated_confidence"] = 1.0 - result["uncertainty"]
-            result["details"]["medical_adjusted"] = True
-        
-        # Determine review level based on uncertainty
-        uncertainty = result["uncertainty"]
-        if uncertainty < 0.2:
-            review_level = "BRIEF"
-        elif uncertainty < 0.4:
-            review_level = "BRIEF"
-        elif uncertainty < 0.6:
-            review_level = "STANDARD"
-        else:
-            review_level = "DETAILED"
-        
-        result["review_level"] = review_level
-        result["details"]["processing_time_ms"] = (time.time() - start) * 1000
-        
         return result
-        
     except Exception as e:
+        logger.error(f"Batch analysis error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
