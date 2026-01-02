@@ -194,7 +194,7 @@ class EntailmentClassifier:
     
     # Use small model for P1v2 App Service (140MB, fits in 3.5GB RAM)
     # TODO: Upgrade to "microsoft/deberta-v3-large-mnli" when moving to Azure ML Endpoint
-    DEFAULT_MODEL = "MoritzLaworski/deberta-v3-small-mnli"
+    DEFAULT_MODEL = "cross-encoder/nli-deberta-v3-small"
     
     def __init__(self, model_name: str = None):
         self.model_name = model_name or self.DEFAULT_MODEL
@@ -210,7 +210,7 @@ class EntailmentClassifier:
             model = model_name or cls.DEFAULT_MODEL
             logger.info(f"Pre-loading entailment model: {model}")
             cls._shared_classifier = pipeline(
-                "zero-shot-classification",
+                "text-classification",
                 model=model,
                 device=-1  # CPU
             )
@@ -225,32 +225,20 @@ class EntailmentClassifier:
         return EntailmentClassifier._shared_classifier
     
     def check_entailment(self, premise: str, hypothesis: str) -> Tuple[str, float]:
-        """
-        Check if premise entails hypothesis.
-        
-        Returns:
-            (label, confidence) where label is 'ENTAILMENT', 'CONTRADICTION', or 'NEUTRAL'
-        """
-        classifier = self._get_classifier()
-        
-        # Use zero-shot classification with entailment labels
-        result = classifier(
-            premise,
-            candidate_labels=[hypothesis],
-            hypothesis_template="{}",
-            multi_label=False
-        )
-        
-        # Score > 0.5 means entailment, < 0.5 means not entailed
-        score = result['scores'][0]
-        if score > 0.7:
-            label = 'ENTAILMENT'
-        elif score < 0.3:
-            label = 'CONTRADICTION'
-        else:
-            label = 'NEUTRAL'
-        
-        return label, score
+  
+    classifier = self._get_classifier()
+    
+    # Cross-encoder expects: "premise [SEP] hypothesis"
+    result = classifier(f"{premise} [SEP] {hypothesis}")
+    
+    # Handle result format
+    if isinstance(result, list):
+        result = result[0]
+    
+    label = result['label'].upper()
+    score = result['score']
+    
+    return label, score
     
     def check_bidirectional_entailment(
         self, 
