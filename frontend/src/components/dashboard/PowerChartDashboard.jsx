@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { analyzeNote, transformApiResponse } from '../../services/api';
 
 // TRUST Color scheme matching brand guidelines + PowerChart
 const COLORS = {
@@ -271,6 +272,33 @@ const TrustMiniLogo = ({ size = 24 }) => (
 export default function TrustPowerChartDashboard() {
   const [selectedFolder, setSelectedFolder] = useState('AI Documents');
   const [selectedDoc, setSelectedDoc] = useState(null);
+  const [documents, setDocuments] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Test function to analyze a note against real Cerner data
+  const testAnalyzeNote = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await analyzeNote({
+        note_id: `test_${Date.now()}`,
+        patient_id: '12724066',
+        sections: {
+          medications: '- Acetaminophen 500mg PRN\n- Amlodipine 5mg daily\n- Warfarin 5mg daily',
+          allergies: '- Penicillin\n- Latex'
+        },
+        source_transcript: 'Patient confirms taking acetaminophen, amlodipine and warfarin'
+      });
+      const transformed = transformApiResponse(response);
+      transformed.patientName = 'SMARTS, NANCYS II';
+      setDocuments(prev => [transformed, ...prev]);
+    } catch (err) {
+      setError(err.message);
+      console.error('Analysis failed:', err);
+    }
+    setLoading(false);
+  };
   const [expandedSections, setExpandedSections] = useState({
     inboxItems: true,
     aiReview: true,
@@ -283,9 +311,10 @@ export default function TrustPowerChartDashboard() {
   };
 
   // Count documents by type
-  const highUncertainty = aiDocuments.filter(d => d.type === 'HIGH_UNCERTAINTY').length;
-  const hallucinations = aiDocuments.filter(d => d.type === 'HALLUCINATION_DETECTED').length;
-  const standardReview = aiDocuments.filter(d => d.type === 'STANDARD').length;
+  const allDocs = [...documents, ...aiDocuments];
+  const highUncertainty = allDocs.filter(d => d.type === 'HIGH_UNCERTAINTY').length;
+  const hallucinations = allDocs.filter(d => d.type === 'HALLUCINATION_DETECTED').length;
+  const standardReview = allDocs.filter(d => d.type === 'STANDARD').length;
   const totalAI = highUncertainty + hallucinations + standardReview;
 
   // Get uncertainty level text based on semantic entropy
@@ -594,8 +623,25 @@ export default function TrustPowerChartDashboard() {
             gap: '8px',
             background: '#f8f8f8'
           }}>
-            <span style={{ fontWeight: '600' }}>AI Documents</span>
-            <span style={{ cursor: 'pointer' }}>×</span>
+           <span style={{ fontWeight: '600' }}>AI Documents</span>
+            <button 
+              onClick={testAnalyzeNote}
+              disabled={loading}
+              style={{
+                marginLeft: '16px',
+                padding: '4px 12px',
+                background: loading ? '#ccc' : '#0891b2',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: loading ? 'wait' : 'pointer',
+                fontSize: '11px'
+              }}
+            >
+              {loading ? 'Analyzing...' : '+ Test Real API'}
+            </button>
+            {error && <span style={{ color: 'red', fontSize: '11px' }}>{error}</span>}
+            <span style={{ cursor: 'pointer' }}>×</span> 
           </div>
 
           {/* Data Grid - Simplified columns */}
@@ -613,7 +659,7 @@ export default function TrustPowerChartDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {aiDocuments.map((doc, index) => (
+                {allDocs.map((doc, index) => (
                   <tr 
                     key={doc.id}
                     onClick={() => setSelectedDoc(doc)}

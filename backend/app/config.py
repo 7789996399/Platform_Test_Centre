@@ -47,6 +47,7 @@ class Settings(BaseSettings):
         "http://localhost:5173",
         "https://www.trustplatform.ca",
         "https://trustplatform.ca",
+        "https://trust-dashboard-swa.azurestaticapps.net",
     ]
     
     
