@@ -213,6 +213,10 @@ async def analyze_note(
                         result.status = VerificationStatus.VERIFIED
                         result.explanation = f"EHR VERIFIED: {ehr_result.explanation}"
         verification_results['contradicted'] = ehr_results.get('contradicted', 0)
+        # Recalculate counts after EHR verification updates
+        verification_results['verified'] = len([r for r in verification_results['results'] if r.status == VerificationStatus.VERIFIED])
+        verification_results['needs_entropy_check'] = len([r for r in verification_results['results'] if r.status != VerificationStatus.VERIFIED])
+        verification_results['compute_saved_percent'] = (verification_results['verified'] / len(verification_results['results']) * 100) if verification_results['results'] else 0
     
     # Step 3: Analyze each claim
     

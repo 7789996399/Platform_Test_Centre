@@ -142,7 +142,7 @@ export function transformApiResponse(apiResponse) {
     }).replace(/ /g, '-'),
     status: apiResponse.overall_risk === 'LOW' ? 'Ready' : 'Review Required',
     type: riskToType[apiResponse.overall_risk] || 'STANDARD',
-    semanticEntropy: apiResponse.review_queue?.[0]?.entropy?.value || 0,
+    semanticEntropy: apiResponse.review_queue?.[0]?.entropy?.entropy || 0,
     assigned: 'Raubenheimer...',
     reviewLevel: apiResponse.review_burden?.detailed_review > 0 ? 'Detailed' : 
                  apiResponse.review_burden?.standard_review > 0 ? 'Standard' : 'Brief',

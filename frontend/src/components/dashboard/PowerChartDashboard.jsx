@@ -285,8 +285,12 @@ export default function TrustPowerChartDashboard() {
         note_id: `test_${Date.now()}`,
         patient_id: '12724066',
         sections: {
-          medications: '- Acetaminophen 500mg PRN\n- Amlodipine 5mg daily\n- Warfarin 5mg daily',
-          allergies: '- Penicillin\n- Latex'
+          medications: [
+            { name: 'Acetaminophen', dose: '500mg', frequency: 'PRN' },
+            { name: 'Amlodipine', dose: '5mg', frequency: 'daily' },
+            { name: 'Warfarin', dose: '5mg', frequency: 'daily' }
+          ],
+          allergies: 'Penicillin, Latex'
         },
         source_transcript: 'Patient confirms taking acetaminophen, amlodipine and warfarin'
       });
