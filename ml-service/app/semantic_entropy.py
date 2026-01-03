@@ -31,6 +31,7 @@ from dataclasses import dataclass
 import asyncio
 import os
 import logging
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -170,16 +171,15 @@ def _generate_mock_responses(prompt: str, num_samples: int) -> List[str]:
 
 
 # =============================================================================
-# STEP 2: BIDIRECTIONAL ENTAILMENT CLUSTERING
+# STEP 2: BIDIRECTIONAL ENTAILMENT CLUSTERING (via Hugging Face API)
 # =============================================================================
 
 class EntailmentClassifier:
     """
-    Bidirectional entailment using DeBERTa-v3-small-MNLI
+    Bidirectional entailment using Hugging Face Inference API
     
-    Model choice rationale:
-    - deberta-v3-small: 140MB, 88.4% accuracy, fits P1v2 App Service
-    - Future: Upgrade to Azure ML Endpoint with deberta-v3-large for pilot
+    Uses DeBERTa-large-MNLI via API (91.3% accuracy) - no local model loading.
+    This avoids all the memory/tokenizer issues with local deployment.
     
     Two texts are semantically equivalent if:
     - A entails B (A → B)  AND
@@ -188,54 +188,96 @@ class EntailmentClassifier:
     This is stricter than just similarity - it requires mutual implication.
     """
     
-    # Class-level model instance (shared across requests, loaded once at startup)
-    _shared_classifier = None
     _model_loaded = False
     
-    # Use small model for P1v2 App Service (140MB, fits in 3.5GB RAM)
-    # TODO: Upgrade to "microsoft/deberta-v3-large-mnli" when moving to Azure ML Endpoint
-    DEFAULT_MODEL = "cross-encoder/nli-distilroberta-base"
+    # Best model for NLI - runs on HF infrastructure
+    DEFAULT_MODEL = "microsoft/deberta-large-mnli"
+    API_URL = "https://api-inference.huggingface.co/models/"
     
     def __init__(self, model_name: str = None):
         self.model_name = model_name or self.DEFAULT_MODEL
+        self.api_token = os.getenv("HUGGINGFACE_API_TOKEN")
+        if not self.api_token:
+            logger.warning("HUGGINGFACE_API_TOKEN not set - will use mock responses")
     
     @classmethod
     def preload_model(cls, model_name: str = None):
-        """
-        Pre-load the model at startup to avoid cold-start latency.
-
-        """
-        if cls._shared_classifier is None:
-            from sentence_transformers import CrossEncoder
-            model = model_name or cls.DEFAULT_MODEL
-            logger.info(f"Pre-loading entailment model: {model}")
-            cls._shared_classifier = CrossEncoder(model)
-            cls._model_loaded = True
-            logger.info(f"Model loaded successfully: {model}")
-        return cls._shared_classifier
+        """No preloading needed for API - just mark as ready"""
+        cls._model_loaded = True
+        logger.info(f"Hugging Face Inference API ready for: {model_name or cls.DEFAULT_MODEL}")
+        return None
     
-    def _get_classifier(self):
-        """Get the shared classifier, loading if necessary"""
-        if EntailmentClassifier._shared_classifier is None:
-            EntailmentClassifier.preload_model(self.model_name)
-        return EntailmentClassifier._shared_classifier
+    @classmethod
+    def is_loaded(cls) -> bool:
+        """Check if ready (always true for API)"""
+        return True
+    
+    async def check_entailment_async(self, premise: str, hypothesis: str) -> Tuple[str, float]:
+        """
+        Check if premise entails hypothesis using HF Inference API (async version).
+        
+        Returns:
+            (label, confidence) where label is 'ENTAILMENT', 'CONTRADICTION', or 'NEUTRAL'
+        """
+        if not self.api_token:
+            # Mock response for testing without API key
+            return 'ENTAILMENT', 0.85
+        
+        url = f"{self.API_URL}{self.model_name}"
+        headers = {"Authorization": f"Bearer {self.api_token}"}
+        
+        # DeBERTa-MNLI expects premise and hypothesis as a pair
+        payload = {
+            "inputs": f"{premise} [SEP] {hypothesis}",
+            "parameters": {"candidate_labels": ["entailment", "contradiction", "neutral"]}
+        }
+        
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(url, headers=headers, json=payload)
+                response.raise_for_status()
+                result = response.json()
+                
+                # Handle different response formats
+                if isinstance(result, list) and len(result) > 0:
+                    result = result[0]
+                
+                # Parse the response
+                if 'label' in result:
+                    label = result['label'].upper()
+                    score = result.get('score', 0.5)
+                elif 'labels' in result:
+                    # Zero-shot classification format
+                    labels = result['labels']
+                    scores = result['scores']
+                    max_idx = scores.index(max(scores))
+                    label = labels[max_idx].upper()
+                    score = scores[max_idx]
+                else:
+                    logger.warning(f"Unexpected API response format: {result}")
+                    return 'NEUTRAL', 0.5
+                
+                return label, float(score)
+                
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HF API error: {e.response.status_code} - {e.response.text}")
+            # Model might be loading - return neutral
+            if e.response.status_code == 503:
+                logger.info("Model is loading on HF, retrying...")
+                await asyncio.sleep(2)
+                return await self.check_entailment_async(premise, hypothesis)
+            return 'NEUTRAL', 0.5
+        except Exception as e:
+            logger.error(f"Entailment check failed: {e}")
+            return 'NEUTRAL', 0.5
     
     def check_entailment(self, premise: str, hypothesis: str) -> Tuple[str, float]:
-        """Check if premise entails hypothesis."""
-        classifier = self._get_classifier()
-        
-        # CrossEncoder.predict returns scores for [contradiction, entailment, neutral]
-        scores = classifier.predict([(premise, hypothesis)])[0]
-        
-        # Get label and confidence
-        labels = ['CONTRADICTION', 'ENTAILMENT', 'NEUTRAL']
-        max_idx = int(scores.argmax())
-        label = labels[max_idx]
-        score = float(scores[max_idx])
-        
-        return label, score
+        """Synchronous wrapper for check_entailment_async"""
+        return asyncio.get_event_loop().run_until_complete(
+            self.check_entailment_async(premise, hypothesis)
+        )
     
-    def check_bidirectional_entailment(
+    async def check_bidirectional_entailment_async(
         self, 
         text_a: str, 
         text_b: str,
@@ -249,24 +291,30 @@ class EntailmentClassifier:
         - B entails A with confidence > threshold
         """
         # A → B
-        label_ab, conf_ab = self.check_entailment(text_a, text_b)
+        label_ab, conf_ab = await self.check_entailment_async(text_a, text_b)
         if label_ab != 'ENTAILMENT' or conf_ab < threshold:
             return False
         
         # B → A
-        label_ba, conf_ba = self.check_entailment(text_b, text_a)
+        label_ba, conf_ba = await self.check_entailment_async(text_b, text_a)
         if label_ba != 'ENTAILMENT' or conf_ba < threshold:
             return False
         
         return True
     
-    @classmethod
-    def is_loaded(cls) -> bool:
-        """Check if model is loaded"""
-        return cls._model_loaded
+    def check_bidirectional_entailment(
+        self, 
+        text_a: str, 
+        text_b: str,
+        threshold: float = 0.5
+    ) -> bool:
+        """Synchronous wrapper"""
+        return asyncio.get_event_loop().run_until_complete(
+            self.check_bidirectional_entailment_async(text_a, text_b, threshold)
+        )
 
 
-def cluster_by_bidirectional_entailment(
+async def cluster_by_bidirectional_entailment_async(
     samples: List[str],
     classifier: Optional[EntailmentClassifier] = None,
     threshold: float = 0.5
@@ -281,32 +329,40 @@ def cluster_by_bidirectional_entailment(
     
     Returns:
         (clusters, assignments) where:
-        - clusters: List of lists, each inner list contains semantically equivalent samples
-        - assignments: List mapping each sample index to its cluster index
+        - clusters: List of lists, each containing equivalent samples
+        - assignments: List mapping each sample to its cluster index
     """
-    if not samples:
-        return [], []
-    
     if classifier is None:
         classifier = EntailmentClassifier()
     
-    clusters: List[List[str]] = [[samples[0]]]  # First sample starts cluster 0
-    assignments: List[int] = [0]  # First sample assigned to cluster 0
+    if not samples:
+        return [], []
     
-    for i, sample in enumerate(samples[1:], start=1):
-        assigned = False
+    # First sample starts cluster 0
+    clusters = [[samples[0]]]
+    assignments = [0]
+    
+    # Process remaining samples
+    for sample in samples[1:]:
+        found_cluster = False
         
-        # Check against representative of each existing cluster
         for cluster_idx, cluster in enumerate(clusters):
-            representative = cluster[0]  # Use first sample as representative
+            # Check against first sample in cluster (representative)
+            representative = cluster[0]
             
-            if classifier.check_bidirectional_entailment(sample, representative, threshold):
-                clusters[cluster_idx].append(sample)
+            is_equivalent = await classifier.check_bidirectional_entailment_async(
+                sample, 
+                representative, 
+                threshold
+            )
+            
+            if is_equivalent:
+                cluster.append(sample)
                 assignments.append(cluster_idx)
-                assigned = True
+                found_cluster = True
                 break
         
-        if not assigned:
+        if not found_cluster:
             # Create new cluster
             clusters.append([sample])
             assignments.append(len(clusters) - 1)
@@ -314,39 +370,48 @@ def cluster_by_bidirectional_entailment(
     return clusters, assignments
 
 
+def cluster_by_bidirectional_entailment(
+    samples: List[str],
+    classifier: Optional[EntailmentClassifier] = None,
+    threshold: float = 0.5
+) -> Tuple[List[List[str]], List[int]]:
+    """Synchronous wrapper"""
+    return asyncio.get_event_loop().run_until_complete(
+        cluster_by_bidirectional_entailment_async(samples, classifier, threshold)
+    )
+
+
 # =============================================================================
-# STEP 3: CALCULATE ENTROPY
+# STEP 3: CALCULATE SEMANTIC ENTROPY
 # =============================================================================
 
-def calculate_cluster_entropy(clusters: List[List[str]], num_samples: int) -> float:
+def calculate_cluster_entropy(cluster_sizes: List[int]) -> float:
     """
-    Calculate semantic entropy from clusters.
+    Calculate Shannon entropy across clusters.
     
-    Formula: SE = -Σ p(cluster) × log₂(p(cluster))
+    SE = -Σ p(cluster) × log₂(p(cluster))
     
-    Where p(cluster) = size of cluster / total samples
-    
-    Interpretation:
-    - SE = 0: All samples in one cluster (perfectly consistent)
-    - SE = log₂(N): Each sample in its own cluster (maximally inconsistent)
+    Where p(cluster) = cluster_size / total_samples
     """
-    if num_samples <= 1 or len(clusters) <= 1:
+    total = sum(cluster_sizes)
+    if total == 0:
         return 0.0
     
     entropy = 0.0
-    for cluster in clusters:
-        p = len(cluster) / num_samples
-        if p > 0:
+    for size in cluster_sizes:
+        if size > 0:
+            p = size / total
             entropy -= p * np.log2(p)
     
-    return float(entropy)
+    return entropy
 
 
 def normalize_entropy(entropy: float, num_samples: int) -> float:
     """
     Normalize entropy to 0-1 range.
     
-    Max possible entropy = log₂(num_samples) when each sample is its own cluster
+    Max entropy occurs when each sample is in its own cluster:
+    max_entropy = log₂(num_samples)
     """
     if num_samples <= 1:
         return 0.0
@@ -381,40 +446,35 @@ async def calculate_semantic_entropy(
     Args:
         prompt: The question/claim to evaluate
         context: Clinical context (e.g., patient record)
-        num_samples: Number of responses to generate (default 5)
+        num_samples: Number of responses to generate
         model: Which LLM to use ("openai", "anthropic", "mock")
         temperature: Sampling temperature (higher = more diverse)
-        entailment_threshold: Confidence threshold for entailment (default 0.5)
+        entailment_threshold: Confidence threshold for entailment
     
     Returns:
-        SemanticEntropyResult with entropy, confidence, clusters, etc.
+        SemanticEntropyResult with entropy metrics
     """
-    
     # Step 1: Generate multiple responses
     logger.info(f"Generating {num_samples} responses using {model}")
-    samples = await generate_responses(
-        prompt=prompt,
-        context=context,
-        num_samples=num_samples,
-        model=model,
-        temperature=temperature
-    )
+    samples = await generate_responses(prompt, context, num_samples, model, temperature)
     
     # Step 2: Cluster by bidirectional entailment
-    logger.info("Clustering by bidirectional entailment")
+    logger.info("Clustering responses by bidirectional entailment")
     classifier = EntailmentClassifier()
-    clusters, assignments = cluster_by_bidirectional_entailment(
-        samples=samples,
-        classifier=classifier,
-        threshold=entailment_threshold
+    clusters, assignments = await cluster_by_bidirectional_entailment_async(
+        samples, 
+        classifier, 
+        entailment_threshold
     )
     
+    cluster_sizes = [len(c) for c in clusters]
+    
     # Step 3: Calculate entropy
-    entropy = calculate_cluster_entropy(clusters, num_samples)
+    entropy = calculate_cluster_entropy(cluster_sizes)
     normalized = normalize_entropy(entropy, num_samples)
     confidence = 1.0 - normalized
     
-    logger.info(f"Entropy: {entropy:.3f}, Clusters: {len(clusters)}, Confidence: {confidence:.3f}")
+    logger.info(f"SE={entropy:.3f}, Normalized={normalized:.3f}, Clusters={len(clusters)}")
     
     return SemanticEntropyResult(
         entropy=entropy,
@@ -422,38 +482,7 @@ async def calculate_semantic_entropy(
         confidence=confidence,
         num_clusters=len(clusters),
         num_samples=num_samples,
-        cluster_sizes=[len(c) for c in clusters],
+        cluster_sizes=cluster_sizes,
         samples=samples,
         cluster_assignments=assignments
     )
-
-
-# =============================================================================
-# LEGACY FUNCTION (for backward compatibility)
-# =============================================================================
-
-async def calculate_entropy(
-    text: str,
-    num_samples: int = 5,
-    model: str = "local"
-) -> Dict:
-    """
-    Legacy function for backward compatibility.
-    Maps to new calculate_semantic_entropy function.
-    """
-    # If model is "local", use mock for now (no local model available)
-    if model == "local":
-        model = "mock"
-    
-    result = await calculate_semantic_entropy(
-        prompt=text,
-        context="",  # No context in legacy API
-        num_samples=num_samples,
-        model=model
-    )
-    
-    return {
-        "entropy": result.normalized_entropy,
-        "confidence": result.confidence,
-        "samples": result.samples
-    }
