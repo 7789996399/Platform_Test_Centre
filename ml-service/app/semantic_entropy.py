@@ -194,7 +194,7 @@ class EntailmentClassifier:
     
     # Use small model for P1v2 App Service (140MB, fits in 3.5GB RAM)
     # TODO: Upgrade to "microsoft/deberta-v3-large-mnli" when moving to Azure ML Endpoint
-    DEFAULT_MODEL = "cross-encoder/nli-distilroberta-base"
+    DEFAULT_MODEL = "cross-encoder/nli-deberta-v3-base"
     
     def __init__(self, model_name: str = None):
         self.model_name = model_name or self.DEFAULT_MODEL
@@ -203,17 +203,13 @@ class EntailmentClassifier:
     def preload_model(cls, model_name: str = None):
         """
         Pre-load the model at startup to avoid cold-start latency.
-        Call this from FastAPI's startup event.
+
         """
         if cls._shared_classifier is None:
-            from transformers import pipeline
+            from sentence_transformers import CrossEncoder
             model = model_name or cls.DEFAULT_MODEL
             logger.info(f"Pre-loading entailment model: {model}")
-            cls._shared_classifier = pipeline(
-                "text-classification",
-                model=model,
-                device=-1  # CPU
-            )
+            cls._shared_classifier = CrossEncoder(model)
             cls._model_loaded = True
             logger.info(f"Model loaded successfully: {model}")
         return cls._shared_classifier
@@ -228,15 +224,14 @@ class EntailmentClassifier:
         """Check if premise entails hypothesis."""
         classifier = self._get_classifier()
         
-        # Cross-encoder expects: "premise [SEP] hypothesis"
-        result = classifier(f"{premise} [SEP] {hypothesis}")
+        # CrossEncoder.predict returns scores for [contradiction, entailment, neutral]
+        scores = classifier.predict([(premise, hypothesis)])[0]
         
-        # Handle result format
-        if isinstance(result, list):
-            result = result[0]
-        
-        label = result['label'].upper()
-        score = result['score']
+        # Get label and confidence
+        labels = ['CONTRADICTION', 'ENTAILMENT', 'NEUTRAL']
+        max_idx = int(scores.argmax())
+        label = labels[max_idx]
+        score = float(scores[max_idx])
         
         return label, score
     
