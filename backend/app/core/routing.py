@@ -248,19 +248,25 @@ async def analyze_note(
                 risk_level=risk_level
             )
         
-        # Step 3b: Uncertainty via ML service
-        ml_uncertainty = await call_ml_service_uncertainty(claim.text)
-        calibrated_conf = ml_uncertainty.get("calibrated_confidence", 0.5)
-        
-        if calibrated_conf >= 0.8:
+        # Step 3b: Uncertainty - skip ML service for verified claims (EHR-First!)
+        if result.status == VerificationStatus.VERIFIED:
+            # EHR verified = high confidence, brief review
+            calibrated_conf = 0.95
             review_tier = ReviewTier.BRIEF
-        elif calibrated_conf >= 0.5:
-            review_tier = ReviewTier.STANDARD
+            flags = []
         else:
-            review_tier = ReviewTier.DETAILED
-        
-        interpretation = ml_uncertainty.get("details", {}).get("interpretation", "")
-        flags = [interpretation.split(" - ")[0]] if interpretation else []
+            ml_uncertainty = await call_ml_service_uncertainty(claim.text)
+            calibrated_conf = ml_uncertainty.get("calibrated_confidence", 0.5)
+            
+            if calibrated_conf >= 0.8:
+                review_tier = ReviewTier.BRIEF
+            elif calibrated_conf >= 0.5:
+                review_tier = ReviewTier.STANDARD
+            else:
+                review_tier = ReviewTier.DETAILED
+            
+            interpretation = ml_uncertainty.get("details", {}).get("interpretation", "")
+            flags = [interpretation.split(" - ")[0]] if interpretation else []
         
         uncertainty_result = UncertaintyResult(
             confidence=calibrated_conf,
