@@ -55,6 +55,7 @@ def extract_dose(med_string: str) -> Tuple[Optional[float], Optional[str]]:
         "Acetaminophen 500mg PRN" → (500.0, "mg")
         "Metoprolol 100 mg BID" → (100.0, "mg")
         "Lisinopril 2.5 mg daily" → (2.5, "mg")
+        "digoxin 5 mcg/kg" → (5.0, "mcg/kg")
         
     Returns:
         (dose_value, dose_unit) or (None, None) if not found
@@ -62,7 +63,16 @@ def extract_dose(med_string: str) -> Tuple[Optional[float], Optional[str]]:
     if not med_string:
         return None, None
     
-    # Pattern: number (with optional decimal) followed by unit
+    # Remove commas from numbers (handles "1,000 mL" → "1000 mL")
+    med_string = med_string.replace(",", "")
+    
+    # FIRST: Check for weight-based dosing (mcg/kg, mg/kg, g/kg)
+    weight_pattern = r'(\d+(?:\.\d+)?)\s*(mcg|mg|g)/kg'
+    match = re.search(weight_pattern, med_string, re.IGNORECASE)
+    if match:
+        return float(match.group(1)), f"{match.group(2).lower()}/kg"
+    
+    # THEN: Standard dose patterns
     dose_patterns = [
         r'(\d+(?:\.\d+)?)\s*(mg|mcg|g|ml|meq|units?|iu)\b',
         r'(\d+(?:\.\d+)?)\s*(milligrams?|micrograms?)',
