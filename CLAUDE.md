@@ -1,5 +1,17 @@
 # Claude Code Instructions for Platform_Test_Centre
 
+## Session Start Template
+When starting a new Claude Code session, begin with:
+```
+I'm working in the Platform_Test_Centre test repo.
+
+Rules:
+1. NO Azure deployments or CLI commands
+2. NO real API calls - use mocks only
+3. NO modifying GitHub Actions
+4. Local testing only
+```
+
 ## CRITICAL: This is a TEST repository
 
 DO NOT:
