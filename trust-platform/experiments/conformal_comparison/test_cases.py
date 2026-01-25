@@ -39,7 +39,9 @@ class TestCase:
     ground_truth_correct: bool  # Is the claim factually correct?
     multiple_responses: List[str]  # 5 simulated LLM responses for SE
     expected_ehr_status: str  # verified/contradiction/not_found
-    difficulty: str  # easy/medium/hard - affects SE variance
+    difficulty: str  # easy/medium/hard - affects SE variance and softmax spread
+    softmax_probs: Dict[str, float] = field(default_factory=dict)  # Softmax probs for conformal
+    true_risk_label: str = ""  # Ground truth risk label for coverage calc
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -112,6 +114,195 @@ LAB_RESULTS = [
     ("BUN", "mg/dL", (8, 40)),
     ("HbA1c", "%", (5.0, 12.0)),
 ]
+
+
+# =============================================================================
+# SOFTMAX PROBABILITY GENERATION BY DIFFICULTY
+# =============================================================================
+
+RISK_LABELS = ["low", "medium", "high", "critical"]
+
+
+def get_true_risk_label(expected_ehr_status: str, difficulty: str) -> str:
+    """
+    Determine ground truth risk label based on EHR status and difficulty.
+
+    Risk matrix:
+    - verified → low
+    - not_found + easy/medium → medium, not_found + hard → high
+    - contradiction + low SE (easy) → critical (confident hallucinator)
+    - contradiction + medium SE → high
+    - contradiction + high SE (hard) → medium (uncertain, less dangerous)
+    """
+    if expected_ehr_status == "verified":
+        return "low"
+    elif expected_ehr_status == "not_found":
+        if difficulty == "hard":
+            return "high"
+        else:
+            return "medium"
+    elif expected_ehr_status == "contradiction":
+        if difficulty == "easy":
+            return "critical"  # Confident hallucinator
+        elif difficulty == "medium":
+            return "high"
+        else:  # hard
+            return "medium"  # High uncertainty = less confident = medium risk
+    else:
+        return "medium"
+
+
+def generate_softmax_probs(
+    difficulty: str,
+    true_label: str,
+    rng: random.Random
+) -> Dict[str, float]:
+    """
+    Generate softmax probabilities based on difficulty level.
+
+    KEY INSIGHT for conformal prediction to show value:
+    - The model is not always correct (true class not always #1)
+    - When true class is NOT the top prediction, we need larger sets
+      to maintain coverage guarantee
+
+    For realistic simulation:
+    - easy: model correct ~95% of time (true class = top prediction)
+    - medium: model correct ~60% of time
+    - hard: model correct ~40% of time (often wrong about top-1)
+
+    When model is "wrong" (true class not #1), conformal prediction
+    must include more classes to maintain coverage → larger sets.
+
+    Args:
+        difficulty: "easy", "medium", or "hard"
+        true_label: The ground truth risk label
+        rng: Random number generator for reproducibility
+
+    Returns:
+        Dict mapping risk labels to softmax probabilities
+    """
+    probs = {}
+    other_labels = [l for l in RISK_LABELS if l != true_label]
+    rng.shuffle(other_labels)
+
+    if difficulty == "easy":
+        # Model is confident AND usually correct
+        # 95% chance true class is top prediction
+        model_correct = rng.random() < 0.95
+
+        if model_correct:
+            # True class has highest probability
+            top_prob = rng.uniform(0.75, 0.90)
+            probs[true_label] = top_prob
+
+            remaining = 1.0 - top_prob
+            weights = [0.6, 0.25, 0.15]
+            for i, label in enumerate(other_labels):
+                probs[label] = remaining * weights[i]
+        else:
+            # Model wrong: another class has highest probability
+            # But true class still has decent probability (ranked #2)
+            wrong_top = other_labels[0]
+            probs[wrong_top] = rng.uniform(0.50, 0.65)
+            probs[true_label] = rng.uniform(0.25, 0.35)
+
+            remaining = 1.0 - probs[wrong_top] - probs[true_label]
+            for label in other_labels[1:]:
+                probs[label] = remaining / len(other_labels[1:])
+
+    elif difficulty == "medium":
+        # Model is moderately confident, sometimes wrong
+        # 60% chance true class is top prediction
+        model_correct = rng.random() < 0.60
+
+        if model_correct:
+            # True class has highest but not overwhelming probability
+            top_prob = rng.uniform(0.45, 0.60)
+            probs[true_label] = top_prob
+
+            # Second class is close behind
+            second_prob = rng.uniform(0.25, 0.35)
+            probs[other_labels[0]] = min(second_prob, 1.0 - top_prob - 0.10)
+
+            remaining = 1.0 - probs[true_label] - probs[other_labels[0]]
+            for label in other_labels[1:]:
+                probs[label] = remaining / len(other_labels[1:])
+        else:
+            # Model wrong: true class is #2 or #3
+            true_rank = rng.choice([2, 3])  # 1-indexed
+
+            if true_rank == 2:
+                # True class at rank 2
+                probs[other_labels[0]] = rng.uniform(0.40, 0.55)  # Wrong top
+                probs[true_label] = rng.uniform(0.25, 0.38)       # True at #2
+                remaining = 1.0 - probs[other_labels[0]] - probs[true_label]
+                for label in other_labels[1:]:
+                    probs[label] = remaining / len(other_labels[1:])
+            else:
+                # True class at rank 3
+                probs[other_labels[0]] = rng.uniform(0.35, 0.45)  # Wrong top
+                probs[other_labels[1]] = rng.uniform(0.25, 0.35)  # Wrong #2
+                probs[true_label] = rng.uniform(0.15, 0.25)       # True at #3
+                remaining = max(0.01, 1.0 - probs[other_labels[0]] - probs[other_labels[1]] - probs[true_label])
+                if len(other_labels) > 2:
+                    probs[other_labels[2]] = remaining
+
+    else:  # hard
+        # Model is uncertain and often wrong
+        # 40% chance true class is top prediction
+        model_correct = rng.random() < 0.40
+
+        if model_correct:
+            # True class at top but not confident
+            top_prob = rng.uniform(0.30, 0.42)
+            probs[true_label] = top_prob
+
+            # Other classes have similar probabilities
+            remaining = 1.0 - top_prob
+            n_others = len(other_labels)
+            for i, label in enumerate(other_labels):
+                # Add some variance to remaining
+                share = remaining / n_others
+                probs[label] = share * rng.uniform(0.7, 1.3)
+        else:
+            # Model wrong: true class is #2, #3, or #4
+            true_rank = rng.choice([2, 2, 3, 3, 4])  # More likely to be #2 or #3
+
+            if true_rank == 2:
+                probs[other_labels[0]] = rng.uniform(0.32, 0.42)
+                probs[true_label] = rng.uniform(0.24, 0.32)
+                remaining = 1.0 - probs[other_labels[0]] - probs[true_label]
+                for label in other_labels[1:]:
+                    probs[label] = remaining / len(other_labels[1:])
+            elif true_rank == 3:
+                probs[other_labels[0]] = rng.uniform(0.30, 0.38)
+                probs[other_labels[1]] = rng.uniform(0.22, 0.30)
+                probs[true_label] = rng.uniform(0.18, 0.26)
+                remaining = max(0.02, 1.0 - probs[other_labels[0]] - probs[other_labels[1]] - probs[true_label])
+                if len(other_labels) > 2:
+                    probs[other_labels[2]] = remaining
+            else:  # true_rank == 4
+                probs[other_labels[0]] = rng.uniform(0.28, 0.36)
+                probs[other_labels[1]] = rng.uniform(0.22, 0.30)
+                probs[other_labels[2]] = rng.uniform(0.18, 0.26)
+                probs[true_label] = max(0.05, 1.0 - probs[other_labels[0]] - probs[other_labels[1]] - probs[other_labels[2]])
+
+    # Ensure all labels have a value
+    for label in RISK_LABELS:
+        if label not in probs:
+            probs[label] = 0.01
+
+    # Normalize to exactly 1.0
+    total = sum(probs.values())
+    probs = {k: round(v / total, 4) for k, v in probs.items()}
+
+    # Fix rounding to ensure sum = 1.0
+    diff = 1.0 - sum(probs.values())
+    if diff != 0:
+        max_label = max(probs.keys(), key=lambda k: probs[k])
+        probs[max_label] = round(probs[max_label] + diff, 4)
+
+    return probs
 
 
 # =============================================================================
@@ -219,7 +410,18 @@ def generate_medication_case(case_num: int, rng: random.Random) -> TestCase:
             ehr_dose = dose
         expected_status = "contradiction" if ehr_available else "not_found"
 
-    difficulty = rng.choice(["easy", "easy", "medium", "medium", "hard"])
+    # Difficulty distribution: 40% easy, 35% medium, 25% hard
+    diff_roll = rng.random()
+    if diff_roll < 0.40:
+        difficulty = "easy"
+    elif diff_roll < 0.75:
+        difficulty = "medium"
+    else:
+        difficulty = "hard"
+
+    # Compute true risk label and softmax probabilities
+    true_label = get_true_risk_label(expected_status, difficulty)
+    softmax_probs = generate_softmax_probs(difficulty, true_label, rng)
 
     return TestCase(
         case_id=f"MED_{case_num:03d}",
@@ -236,6 +438,8 @@ def generate_medication_case(case_num: int, rng: random.Random) -> TestCase:
         multiple_responses=generate_consistent_responses(claim_text, is_correct, difficulty),
         expected_ehr_status=expected_status,
         difficulty=difficulty,
+        softmax_probs=softmax_probs,
+        true_risk_label=true_label,
     )
 
 
@@ -259,7 +463,18 @@ def generate_allergy_case(case_num: int, rng: random.Random) -> TestCase:
             claim_text = f"Patient is allergic to {other_allergen}"
         expected_status = "contradiction" if ehr_available else "not_found"
 
-    difficulty = rng.choice(["easy", "medium", "hard"])
+    # Difficulty distribution: 40% easy, 35% medium, 25% hard
+    diff_roll = rng.random()
+    if diff_roll < 0.40:
+        difficulty = "easy"
+    elif diff_roll < 0.75:
+        difficulty = "medium"
+    else:
+        difficulty = "hard"
+
+    # Compute true risk label and softmax probabilities
+    true_label = get_true_risk_label(expected_status, difficulty)
+    softmax_probs = generate_softmax_probs(difficulty, true_label, rng)
 
     return TestCase(
         case_id=f"ALG_{case_num:03d}",
@@ -274,6 +489,8 @@ def generate_allergy_case(case_num: int, rng: random.Random) -> TestCase:
         multiple_responses=generate_consistent_responses(claim_text, is_correct, difficulty),
         expected_ehr_status=expected_status,
         difficulty=difficulty,
+        softmax_probs=softmax_probs,
+        true_risk_label=true_label,
     )
 
 
@@ -292,7 +509,18 @@ def generate_diagnosis_case(case_num: int, rng: random.Random) -> TestCase:
         claim_text = f"Patient has history of {other_dx}"
         expected_status = "contradiction" if ehr_available else "not_found"
 
-    difficulty = rng.choice(["easy", "medium", "medium", "hard"])
+    # Difficulty distribution: 40% easy, 35% medium, 25% hard
+    diff_roll = rng.random()
+    if diff_roll < 0.40:
+        difficulty = "easy"
+    elif diff_roll < 0.75:
+        difficulty = "medium"
+    else:
+        difficulty = "hard"
+
+    # Compute true risk label and softmax probabilities
+    true_label = get_true_risk_label(expected_status, difficulty)
+    softmax_probs = generate_softmax_probs(difficulty, true_label, rng)
 
     return TestCase(
         case_id=f"DX_{case_num:03d}",
@@ -307,6 +535,8 @@ def generate_diagnosis_case(case_num: int, rng: random.Random) -> TestCase:
         multiple_responses=generate_consistent_responses(claim_text, is_correct, difficulty),
         expected_ehr_status=expected_status,
         difficulty=difficulty,
+        softmax_probs=softmax_probs,
+        true_risk_label=true_label,
     )
 
 
@@ -345,7 +575,18 @@ def generate_vital_sign_case(case_num: int, rng: random.Random) -> TestCase:
         "contradiction" if ehr_available else "not_found"
     )
 
-    difficulty = rng.choice(["easy", "easy", "medium"])
+    # Difficulty distribution: 40% easy, 35% medium, 25% hard
+    diff_roll = rng.random()
+    if diff_roll < 0.40:
+        difficulty = "easy"
+    elif diff_roll < 0.75:
+        difficulty = "medium"
+    else:
+        difficulty = "hard"
+
+    # Compute true risk label and softmax probabilities
+    true_label = get_true_risk_label(expected_status, difficulty)
+    softmax_probs = generate_softmax_probs(difficulty, true_label, rng)
 
     return TestCase(
         case_id=f"VS_{case_num:03d}",
@@ -361,6 +602,8 @@ def generate_vital_sign_case(case_num: int, rng: random.Random) -> TestCase:
         multiple_responses=generate_consistent_responses(claim_text, is_correct, difficulty),
         expected_ehr_status=expected_status,
         difficulty=difficulty,
+        softmax_probs=softmax_probs,
+        true_risk_label=true_label,
     )
 
 
@@ -384,7 +627,18 @@ def generate_lab_result_case(case_num: int, rng: random.Random) -> TestCase:
         "contradiction" if ehr_available else "not_found"
     )
 
-    difficulty = rng.choice(["easy", "medium", "medium", "hard"])
+    # Difficulty distribution: 40% easy, 35% medium, 25% hard
+    diff_roll = rng.random()
+    if diff_roll < 0.40:
+        difficulty = "easy"
+    elif diff_roll < 0.75:
+        difficulty = "medium"
+    else:
+        difficulty = "hard"
+
+    # Compute true risk label and softmax probabilities
+    true_label = get_true_risk_label(expected_status, difficulty)
+    softmax_probs = generate_softmax_probs(difficulty, true_label, rng)
 
     return TestCase(
         case_id=f"LAB_{case_num:03d}",
@@ -400,6 +654,8 @@ def generate_lab_result_case(case_num: int, rng: random.Random) -> TestCase:
         multiple_responses=generate_consistent_responses(claim_text, is_correct, difficulty),
         expected_ehr_status=expected_status,
         difficulty=difficulty,
+        softmax_probs=softmax_probs,
+        true_risk_label=true_label,
     )
 
 

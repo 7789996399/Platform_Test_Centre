@@ -21,7 +21,10 @@ from typing import Dict, Any, List, Optional
 from enum import Enum
 
 # Import test case structure
-from test_cases import TestCase, ClaimType
+try:
+    from experiments.conformal_comparison.test_cases import TestCase, ClaimType
+except ImportError:
+    from test_cases import TestCase, ClaimType
 
 
 # =============================================================================

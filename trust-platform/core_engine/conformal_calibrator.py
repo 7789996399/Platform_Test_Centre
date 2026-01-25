@@ -535,6 +535,10 @@ class AdaptivePredictionSets(ConformalCalibrator):
     This creates smaller sets when the model is confident and larger
     sets when uncertain.
 
+    Key insight: When softmax probabilities are spread out (low confidence),
+    the cumulative probability grows slowly, requiring MORE classes to
+    exceed the threshold, resulting in LARGER prediction sets.
+
     Regularization Option (RAPS):
         Set regularization_weight > 0 to penalize large sets, producing
         smaller but still valid prediction sets.
@@ -549,6 +553,78 @@ class AdaptivePredictionSets(ConformalCalibrator):
         self.regularization_weight = regularization_weight
         if regularization_weight > 0:
             self.method = CalibrationMethod.RAPS
+
+    def calibrate(
+        self,
+        scores: List[Dict[str, float]],
+        labels: List[str],
+    ) -> CalibrationResult:
+        """
+        Calibrate APS using cumulative probability conformity scores.
+
+        For APS, the conformity score is the cumulative probability of classes
+        ranked HIGHER than the true class (i.e., cumulative BEFORE true class).
+
+        Coverage holds when: conformity < threshold (true class is reached
+        before we stop).
+
+        Args:
+            scores: List of {class: probability} dicts from model
+            labels: True labels for calibration set
+
+        Returns:
+            CalibrationResult with threshold and stats
+        """
+        if len(scores) != len(labels):
+            raise ValueError("Scores and labels must have same length")
+
+        if not scores:
+            raise ValueError("Cannot calibrate with empty data")
+
+        # Compute APS conformity scores: cumulative probability BEFORE true class
+        conformity_scores = []
+        for score_dict, true_label in zip(scores, labels):
+            # Sort classes by probability (descending)
+            sorted_classes = sorted(
+                score_dict.keys(),
+                key=lambda c: score_dict.get(c, 0),
+                reverse=True
+            )
+
+            # Compute cumulative probability BEFORE true class
+            # This is the sum of probabilities of classes ranked higher
+            cumulative_before = 0.0
+            for cls in sorted_classes:
+                if cls == true_label:
+                    break
+                cumulative_before += score_dict.get(cls, 0.0)
+
+            conformity_scores.append(cumulative_before)
+
+        # Compute threshold as quantile of conformity scores
+        # We want: P(conformity < threshold) >= 1 - alpha
+        self._threshold = compute_quantile(conformity_scores, self.coverage_target)
+
+        # Compute empirical coverage: covered if conformity < threshold
+        # (true class is reached before stopping point)
+        covered = sum(1 for s in conformity_scores if s < self._threshold)
+        empirical_coverage = covered / len(conformity_scores)
+
+        self._calibrated = True
+        self._calibration_result = CalibrationResult(
+            method=self.method,
+            alpha=self.alpha,
+            threshold=self._threshold,
+            n_calibration=len(scores),
+            empirical_coverage=empirical_coverage,
+            metadata={
+                "min_conformity": min(conformity_scores),
+                "max_conformity": max(conformity_scores),
+                "mean_conformity": sum(conformity_scores) / len(conformity_scores),
+            }
+        )
+
+        return self._calibration_result
 
     def predict_set(
         self,

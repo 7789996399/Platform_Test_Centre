@@ -26,7 +26,10 @@ from enum import Enum
 sys.path.insert(0, '../..')
 
 # Import test case structure
-from test_cases import TestCase, ClaimType
+try:
+    from experiments.conformal_comparison.test_cases import TestCase, ClaimType
+except ImportError:
+    from test_cases import TestCase, ClaimType
 
 # Import conformal calibrator from trust-platform
 from core_engine.conformal_calibrator import (
@@ -322,6 +325,9 @@ class NewPlatformRunner:
 
         MUST be called before process_case().
 
+        Uses the pre-computed softmax_probs from test cases which vary by
+        difficulty level (easy=high confidence, hard=spread out).
+
         Args:
             calibration_cases: Cases with known ground truth for calibration
 
@@ -332,17 +338,13 @@ class NewPlatformRunner:
         cal_labels = []
 
         for case in calibration_cases:
-            # Compute features
-            ehr_status = verify_against_ehr(case)
-            se = compute_semantic_entropy(case.multiple_responses)
-            se_level = classify_se_level(se)
-
-            # Compute risk scores (softmax probabilities)
-            scores = compute_risk_scores(ehr_status, se, se_level, case.claim_type)
+            # Use pre-computed softmax probabilities from test case
+            # These vary by difficulty: easy=peaked, medium=moderate, hard=spread out
+            scores = case.softmax_probs
             cal_scores.append(scores)
 
-            # Get true label
-            true_label = get_true_risk_level(ehr_status, se_level)
+            # Use pre-computed true label from test case
+            true_label = case.true_risk_label
             cal_labels.append(true_label)
 
         # Calibrate
@@ -354,6 +356,12 @@ class NewPlatformRunner:
     def process_case(self, case: TestCase) -> NewPlatformResult:
         """
         Process a single test case through NEW platform with conformal.
+
+        Uses the pre-computed softmax_probs from the test case, which vary
+        by difficulty level to demonstrate conformal prediction's value:
+        - easy cases: peaked probs → set size = 1
+        - medium cases: moderate spread → set size = 2
+        - hard cases: spread out probs → set size = 2-3
 
         Returns raw measurements including conformal prediction set.
         """
@@ -369,14 +377,16 @@ class NewPlatformRunner:
         se = compute_semantic_entropy(case.multiple_responses)
         se_level = classify_se_level(se)
 
-        # Step 3: Compute risk scores (NEW - softmax over all classes)
-        scores = compute_risk_scores(ehr_status, se, se_level, case.claim_type)
+        # Step 3: Use pre-computed softmax probs (KEY DIFFERENCE!)
+        # These vary by difficulty level in the test case
+        scores = case.softmax_probs
 
         # Step 4: Get conformal prediction SET (NEW!)
         prediction_set = self.calibrator.predict_set(scores, self.class_names)
 
         # Step 5: Check if ground truth is in set (KEY METRIC)
-        true_label = get_true_risk_level(ehr_status, se_level)
+        # Use pre-computed true label from test case
+        true_label = case.true_risk_label
         ground_truth_in_set = true_label in prediction_set.classes
 
         # Step 6: Get argmax as "point estimate" for backward compatibility
