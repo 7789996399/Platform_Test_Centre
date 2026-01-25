@@ -215,8 +215,17 @@ def compute_risk_level(
         return RiskLevel.LOW
 
 
-def requires_physician_review(risk_level: RiskLevel) -> bool:
-    """Determine if physician review is needed."""
+def requires_physician_review(risk_level: RiskLevel, ehr_status: str) -> bool:
+    """
+    Determine if physician review is needed.
+
+    CRITICAL FIX: ANY contradiction requires review - it's a factual error.
+    The SE level tells us about model confidence, but doesn't change
+    the fact that a contradiction means the claim conflicts with EHR data.
+    """
+    # ANY contradiction requires review - it's a factual error
+    if ehr_status == "contradiction":
+        return True
     return risk_level in (RiskLevel.HIGH, RiskLevel.CRITICAL)
 
 
@@ -260,7 +269,8 @@ class OldPlatformRunner:
         risk_level = compute_risk_level(ehr_status, se_level, case.claim_type)
 
         # Step 4: Determine if review needed
-        review_needed = requires_physician_review(risk_level)
+        # Pass ehr_status to ensure ALL contradictions are flagged
+        review_needed = requires_physician_review(risk_level, ehr_status.value)
 
         end_time = time.perf_counter()
         computation_ms = (end_time - start_time) * 1000
