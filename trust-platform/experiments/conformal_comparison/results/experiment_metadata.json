@@ -1,0 +1,32 @@
+{
+  "experiment_name": "conformal_prediction_comparison",
+  "description": "Comparing OLD platform (SE-only) vs NEW platform (conformal prediction)",
+  "timestamp_start": "2026-01-25T14:35:20.057990",
+  "parameters": {
+    "seed": 42,
+    "n_total_cases": 100,
+    "n_calibration_cases": 20,
+    "n_test_cases": 80,
+    "coverage_target": 0.9,
+    "calibration_threshold": 0.499
+  },
+  "platforms": {
+    "OLD": {
+      "name": "OLD_PLATFORM",
+      "version": "1.0",
+      "description": "EHR-First with Semantic Entropy only",
+      "has_conformal": false
+    },
+    "NEW": {
+      "name": "NEW_PLATFORM",
+      "version": "2.0",
+      "description": "EHR-First with Conformal Prediction",
+      "has_conformal": true
+    }
+  },
+  "output_files": [
+    "case_level_results.csv",
+    "calibration_data.csv",
+    "experiment_metadata.json"
+  ]
+}
