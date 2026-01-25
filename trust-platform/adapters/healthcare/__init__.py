@@ -8,7 +8,7 @@ Domain-specific adapter for healthcare AI governance including:
 - Medical claim source attribution
 """
 
-from .healthcare_adapter import (
+from adapters.healthcare.healthcare_adapter import (
     HealthcareAdapter,
     HealthcareClaimType,
     HealthcareVerificationResult,

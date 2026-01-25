@@ -9,7 +9,7 @@ Domain-specific adapter for financial services AI governance including:
 - Forward-looking statement detection
 """
 
-from .finance_adapter import (
+from adapters.finance.finance_adapter import (
     FinanceAdapter,
     FinanceClaimType,
     FinanceReviewLevel,

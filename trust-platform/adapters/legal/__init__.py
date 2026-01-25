@@ -9,7 +9,7 @@ Domain-specific adapter for legal AI governance including:
 - Limitation period checking
 """
 
-from .legal_adapter import (
+from adapters.legal.legal_adapter import (
     LegalAdapter,
     LegalClaimType,
     LegalReviewLevel,

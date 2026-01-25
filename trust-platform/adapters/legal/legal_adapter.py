@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
-from ..base_adapter import (
+from adapters.base_adapter import (
     AdapterConfig,
     Claim as BaseClaim,
     IndustryAdapter,
@@ -30,14 +30,14 @@ from ..base_adapter import (
     VerificationResult,
 )
 
-from ...core_engine.faithfulness import (
+from core_engine.faithfulness import (
     Claim,
     ClaimCategory,
     SourceDocument,
     VerificationResult as CoreVerificationResult,
     VerificationStatus,
 )
-from ...core_engine.semantic_entropy import EntropyThresholds
+from core_engine.semantic_entropy import EntropyThresholds
 
 
 # =============================================================================

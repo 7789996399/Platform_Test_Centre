@@ -8,7 +8,7 @@ This module provides the core verification and validation components:
 - Expert Routing: Domain-specific model selection
 """
 
-from .semantic_entropy import (
+from core_engine.semantic_entropy import (
     EntropyRiskLevel,
     EntropyResult,
     EntropyThresholds,
@@ -23,7 +23,7 @@ from .semantic_entropy import (
     calculate_semantic_entropy,
 )
 
-from .faithfulness import (
+from core_engine.faithfulness import (
     VerificationStatus,
     ClaimCategory,
     Claim,
@@ -39,7 +39,7 @@ from .faithfulness import (
     SimpleTextMatcher,
 )
 
-from .ensemble_orchestrator import (
+from core_engine.ensemble_orchestrator import (
     OverallRiskLevel,
     ReviewLevel,
     HallucinationType,

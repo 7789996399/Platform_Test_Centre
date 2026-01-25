@@ -51,13 +51,13 @@ from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple
 import asyncio
 
-from .semantic_entropy import (
+from core_engine.semantic_entropy import (
     EntropyResult,
     EntropyRiskLevel,
     EntropyThresholds,
     SemanticEntropyCalculator,
 )
-from .faithfulness import (
+from core_engine.faithfulness import (
     BatchVerificationResult,
     Claim,
     ClaimCategory,

@@ -13,7 +13,7 @@ Available Adapters:
 - FinanceAdapter: Performance claims, fee disclosures, Reg BI compliance
 """
 
-from .base_adapter import (
+from adapters.base_adapter import (
     IndustryAdapter,
     AdapterConfig,
     Claim,
@@ -22,7 +22,7 @@ from .base_adapter import (
     VerificationResult,
 )
 
-from .healthcare import (
+from adapters.healthcare import (
     HealthcareAdapter,
     HealthcareClaimType,
     HealthcareVerificationResult,
@@ -32,7 +32,7 @@ from .healthcare import (
     AUTHORITATIVE_CLINICAL_SOURCES,
 )
 
-from .legal import (
+from adapters.legal import (
     LegalAdapter,
     LegalClaimType,
     LegalReviewLevel,
@@ -43,7 +43,7 @@ from .legal import (
     AUTHORITATIVE_STATUTE_SOURCES,
 )
 
-from .finance import (
+from adapters.finance import (
     FinanceAdapter,
     FinanceClaimType,
     FinanceReviewLevel,
