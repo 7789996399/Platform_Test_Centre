@@ -255,11 +255,11 @@ class ClaimExtractor:
     
     Return as JSON array:
     [
-        {
+        {{
             "claim_text": "Patient takes Metoprolol 50mg BID",
             "claim_type": "medication",
             "source_sentence": "CURRENT MEDICATIONS: Metoprolol 50mg PO BID"
-        },
+        }},
         ...
     ]
     
