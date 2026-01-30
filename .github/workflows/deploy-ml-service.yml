@@ -1,11 +1,6 @@
 name: Deploy ML Service to Azure
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'ml-service/**'
   workflow_dispatch:
 
 jobs:
