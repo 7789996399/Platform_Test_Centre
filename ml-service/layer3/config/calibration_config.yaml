@@ -1,0 +1,19 @@
+# Layer 3 Conformal Calibration Configuration
+
+conformal:
+  coverage_target: 0.90
+  min_calibration_samples: 100
+  # Review levels ordered by severity (used for prediction sets)
+  review_levels:
+    - "BRIEF"
+    - "STANDARD"
+    - "DETAILED"
+    - "CRITICAL"
+
+histogram:
+  score_bins: 10
+  min_bin_count: 5
+
+persistence:
+  save_dir: "layer3_calibration"
+  filename: "calibrator_state.json"
