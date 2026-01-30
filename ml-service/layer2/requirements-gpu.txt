@@ -1,0 +1,9 @@
+torch==2.2.0
+transformers==4.38.0
+peft==0.8.2
+bitsandbytes==0.42.0
+accelerate==0.27.0
+datasets==2.17.0
+wandb==0.16.3
+pyyaml==6.0.1
+scikit-learn==1.4.0
