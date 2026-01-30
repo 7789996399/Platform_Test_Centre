@@ -7,11 +7,14 @@ NEW MODULE: trust_scribe_ehr_first_validation.py
 This implements the efficient EHR-first approach:
 1. Extract claims from AI note (1 LLM call)
 2. Check ALL claims against EHR via FHIR (fast DB lookup, no LLM)
+2.5. HHEM faithfulness scoring on unresolved claims (local model, no LLM)
 3. Run Semantic Entropy ONLY on contradictions (~1-5% of claims)
+4. Risk assessment combining 3 signals: EHR + HHEM + SE
 
 Why EHR-First?
-- Complex patient: 150 claims × 5 SE passes = 750 LLM calls ❌
-- EHR-First: 150 FHIR lookups + ~5 contradictions × 5 = 25 LLM calls ✅
+- Complex patient: 150 claims × 5 SE passes = 750 LLM calls
+- EHR-First: 150 FHIR lookups + ~30 HHEM scores + ~5 SE × 5 = 25 LLM calls
+- HHEM closes the NOT_FOUND blind spot with zero additional LLM cost
 
 Author: TRUST Medical AI Platform
 Version: 0.3.0
@@ -19,10 +22,21 @@ Version: 0.3.0
 
 import json
 import math
+import logging
 from enum import Enum
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Tuple, Any
 from datetime import datetime
+
+from ..core.hhem_faithfulness import (
+    FaithfulnessLevel,
+    FaithfulnessResult,
+    MockHHEM,
+    create_scorer,
+    get_faithfulness_summary,
+)
+
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -85,11 +99,15 @@ class ExtractedClaim:
     ehr_matched_value: Optional[str] = None  # What EHR actually says
     ehr_resource_type: Optional[str] = None  # FHIR resource (MedicationStatement, etc.)
     
+    # HHEM faithfulness results (populated by step 2.5, for NOT_FOUND + CONTRADICTION)
+    hhem_score: Optional[float] = None
+    hhem_level: Optional[FaithfulnessLevel] = None
+
     # Semantic entropy results (populated by step 3, ONLY for contradictions)
     semantic_entropy: Optional[float] = None
     se_level: Optional[SemanticEntropyLevel] = None
     se_responses: Optional[List[str]] = None  # The 5 responses for debugging
-    
+
     # Final assessment
     risk_level: Optional[FinalRiskLevel] = None
     risk_explanation: Optional[str] = None
@@ -122,6 +140,10 @@ class ValidationReport:
     not_found_claims: int
     not_checkable_claims: int
     
+    # HHEM was run on NOT_FOUND + CONTRADICTION claims
+    hhem_tested_claims: int
+    hhem_unfaithful_claims: int   # HHEM score < 0.5 (likely hallucinated)
+
     # SE was only run on contradictions
     se_tested_claims: int
     confident_hallucinators: int  # Low SE but contradicts EHR
@@ -797,27 +819,60 @@ class RiskAssessor:
     
     def assess_claim(self, claim: ExtractedClaim) -> ExtractedClaim:
         """
-        Assess risk for a single claim based on EHR status and SE results.
+        Assess risk for a single claim using up to 3 signals:
+          1. EHR verification status
+          2. HHEM faithfulness score (for NOT_FOUND + CONTRADICTION)
+          3. Semantic entropy level (for CONTRADICTION only)
         """
         # Verified claims = low risk
         if claim.ehr_status == EHRVerificationStatus.VERIFIED:
             claim.risk_level = FinalRiskLevel.LOW
             claim.risk_explanation = "Claim verified against EHR"
             claim.requires_physician_review = False
-        
+
         # Not checkable = low risk (can't verify)
         elif claim.ehr_status == EHRVerificationStatus.NOT_CHECKABLE:
             claim.risk_level = FinalRiskLevel.LOW
             claim.risk_explanation = "Claim type not verifiable against EHR"
             claim.requires_physician_review = False
-        
-        # Not found = medium risk (new info)
+
+        # Not found in EHR — use HHEM to differentiate
         elif claim.ehr_status == EHRVerificationStatus.NOT_FOUND:
-            claim.risk_level = FinalRiskLevel.MEDIUM
-            claim.risk_explanation = "Claim not found in EHR - may be new information"
-            claim.requires_physician_review = True
-        
-        # Contradiction = risk depends on SE
+            if claim.hhem_level == FaithfulnessLevel.FAITHFUL:
+                # Claim is faithful to transcript but missing from EHR
+                # Likely new info mentioned by patient
+                claim.risk_level = FinalRiskLevel.LOW
+                claim.risk_explanation = (
+                    "Not in EHR but faithful to transcript "
+                    f"(HHEM={claim.hhem_score:.2f}). "
+                    "Likely new information from patient."
+                )
+                claim.requires_physician_review = False
+            elif claim.hhem_level == FaithfulnessLevel.PARTIALLY_FAITHFUL:
+                claim.risk_level = FinalRiskLevel.MEDIUM
+                claim.risk_explanation = (
+                    "Not in EHR, partially supported by transcript "
+                    f"(HHEM={claim.hhem_score:.2f}). Review recommended."
+                )
+                claim.requires_physician_review = True
+            elif claim.hhem_level in (
+                FaithfulnessLevel.LIKELY_HALLUCINATED,
+                FaithfulnessLevel.HALLUCINATED,
+            ):
+                claim.risk_level = FinalRiskLevel.HIGH
+                claim.risk_explanation = (
+                    "Not in EHR and not supported by transcript "
+                    f"(HHEM={claim.hhem_score:.2f}). "
+                    "Likely hallucination."
+                )
+                claim.requires_physician_review = True
+            else:
+                # HHEM not available — fall back to original MEDIUM
+                claim.risk_level = FinalRiskLevel.MEDIUM
+                claim.risk_explanation = "Claim not found in EHR - may be new information"
+                claim.requires_physician_review = True
+
+        # Contradiction = combine HHEM + SE
         elif claim.ehr_status == EHRVerificationStatus.CONTRADICTION:
             if claim.se_level == SemanticEntropyLevel.HIGH:
                 # High SE = transcript was ambiguous
@@ -827,7 +882,7 @@ class RiskAssessor:
                     "Transcript may have been ambiguous."
                 )
                 claim.requires_physician_review = True
-            
+
             elif claim.se_level == SemanticEntropyLevel.MEDIUM:
                 claim.risk_level = FinalRiskLevel.HIGH
                 claim.risk_explanation = (
@@ -835,16 +890,30 @@ class RiskAssessor:
                     "Verify with patient."
                 )
                 claim.requires_physician_review = True
-            
-            else:  # LOW SE = confident hallucinator OR new info
-                claim.risk_level = FinalRiskLevel.CRITICAL
-                claim.risk_explanation = (
-                    "CRITICAL: AI is confident but claim contradicts EHR. "
-                    "Either patient reported new info, or AI hallucinated. "
-                    "MUST verify with patient before signing."
-                )
-                claim.requires_physician_review = True
-        
+
+            else:  # LOW SE = confident — HHEM disambiguates
+                if claim.hhem_level == FaithfulnessLevel.FAITHFUL:
+                    # Faithful to transcript but contradicts EHR
+                    # Patient likely reported new info not yet in record
+                    claim.risk_level = FinalRiskLevel.HIGH
+                    claim.risk_explanation = (
+                        "Contradicts EHR but faithful to transcript "
+                        f"(HHEM={claim.hhem_score:.2f}). "
+                        "Patient may have reported new info. "
+                        "EHR may need updating."
+                    )
+                    claim.requires_physician_review = True
+                else:
+                    # Not faithful to transcript AND contradicts EHR
+                    claim.risk_level = FinalRiskLevel.CRITICAL
+                    claim.risk_explanation = (
+                        "CRITICAL: Contradicts EHR and not supported by transcript "
+                        f"(HHEM={claim.hhem_score:.2f}). "
+                        "Confident hallucination. "
+                        "MUST verify with patient before signing."
+                    )
+                    claim.requires_physician_review = True
+
         return claim
     
     def assess_document(
@@ -906,21 +975,24 @@ class TRUSTScribeValidator:
         llm_client,
         fhir_client,
         entailment_checker=None,
+        hhem_scorer=None,
         se_num_samples: int = 5,
         se_temperature: float = 0.7
     ):
         """
         Initialize the validator.
-        
+
         Args:
             llm_client: LLM client for claim extraction and SE
             fhir_client: FHIR client for EHR verification
             entailment_checker: Optional DeBERTa for semantic clustering
+            hhem_scorer: HHEM faithfulness scorer (defaults to MockHHEM)
             se_num_samples: Number of samples for SE (default 5)
             se_temperature: Temperature for SE sampling (default 0.7)
         """
         self.claim_extractor = ClaimExtractor(llm_client)
         self.ehr_verifier = EHRVerifier(fhir_client)
+        self.hhem_scorer = hhem_scorer or create_scorer(use_mock=True)
         self.se_calculator = TargetedSemanticEntropyCalculator(
             llm_client,
             num_samples=se_num_samples,
@@ -956,16 +1028,41 @@ class TRUSTScribeValidator:
         
         # STEP 2: Verify against EHR (fast FHIR lookups)
         claims = self.ehr_verifier.verify_all_claims(claims, patient_id)
-        
+
+        # STEP 2.5: HHEM faithfulness scoring (local model, no LLM calls)
+        # Run on claims that EHR couldn't fully resolve
+        needs_hhem = [
+            c for c in claims
+            if c.ehr_status in (
+                EHRVerificationStatus.NOT_FOUND,
+                EHRVerificationStatus.CONTRADICTION,
+            )
+        ]
+
+        if needs_hhem:
+            hhem_results = self.hhem_scorer.score_claims_batch(
+                [c.claim_text for c in needs_hhem], transcript
+            )
+            for claim, hhem_result in zip(needs_hhem, hhem_results):
+                claim.hhem_score = hhem_result.score
+                claim.hhem_level = hhem_result.level
+            logger.info(
+                "HHEM scored %d claims: %d unfaithful",
+                len(needs_hhem),
+                sum(1 for r in hhem_results
+                    if r.level in (FaithfulnessLevel.LIKELY_HALLUCINATED,
+                                   FaithfulnessLevel.HALLUCINATED)),
+            )
+
         # STEP 3: Run SE only on contradictions
         contradictions = [
-            c for c in claims 
+            c for c in claims
             if c.ehr_status == EHRVerificationStatus.CONTRADICTION
         ]
-        
+
         confident_hallucinators = 0
         ambiguous_claims = 0
-        
+
         for claim in contradictions:
             se_result = self.se_calculator.calculate_for_claim(claim, transcript)
             
@@ -1000,6 +1097,16 @@ class TRUSTScribeValidator:
         # Generate recommendations
         recommendations = self._generate_recommendations(claims, overall_risk)
         
+        # HHEM summary counts
+        hhem_tested = len(needs_hhem)
+        hhem_unfaithful = sum(
+            1 for c in needs_hhem
+            if c.hhem_level in (
+                FaithfulnessLevel.LIKELY_HALLUCINATED,
+                FaithfulnessLevel.HALLUCINATED,
+            )
+        )
+
         # Build report
         return ValidationReport(
             document_id=document_id,
@@ -1010,6 +1117,8 @@ class TRUSTScribeValidator:
             contradiction_claims=len(contradictions),
             not_found_claims=sum(1 for c in claims if c.ehr_status == EHRVerificationStatus.NOT_FOUND),
             not_checkable_claims=sum(1 for c in claims if c.ehr_status == EHRVerificationStatus.NOT_CHECKABLE),
+            hhem_tested_claims=hhem_tested,
+            hhem_unfaithful_claims=hhem_unfaithful,
             se_tested_claims=len(contradictions),
             confident_hallucinators=confident_hallucinators,
             ambiguous_claims=ambiguous_claims,
@@ -1046,12 +1155,48 @@ class TRUSTScribeValidator:
                 f"⚠️ HIGH RISK: {len(high_risk)} claim(s) need careful review."
             )
         
-        # Not found claims (potential new info)
-        not_found = [c for c in claims if c.ehr_status == EHRVerificationStatus.NOT_FOUND]
-        if not_found:
+        # HHEM-detected unfaithful claims (not in EHR AND not in transcript)
+        hhem_hallucinated = [
+            c for c in claims
+            if c.ehr_status == EHRVerificationStatus.NOT_FOUND
+            and c.hhem_level in (
+                FaithfulnessLevel.LIKELY_HALLUCINATED,
+                FaithfulnessLevel.HALLUCINATED,
+            )
+        ]
+        if hhem_hallucinated:
             recommendations.append(
-                f"ℹ️ NEW INFO: {len(not_found)} claim(s) not in EHR. "
-                f"If accurate, EHR may need updating."
+                f"🔍 HHEM ALERT: {len(hhem_hallucinated)} claim(s) not in EHR "
+                f"and not supported by transcript. Likely fabricated."
+            )
+            for claim in hhem_hallucinated:
+                recommendations.append(
+                    f"   • {claim.claim_text} (HHEM={claim.hhem_score:.2f})"
+                )
+
+        # Not found but faithful to transcript (likely new patient info)
+        not_found_faithful = [
+            c for c in claims
+            if c.ehr_status == EHRVerificationStatus.NOT_FOUND
+            and c.hhem_level == FaithfulnessLevel.FAITHFUL
+        ]
+        if not_found_faithful:
+            recommendations.append(
+                f"ℹ️ NEW INFO: {len(not_found_faithful)} claim(s) not in EHR "
+                f"but supported by transcript. EHR may need updating."
+            )
+
+        # Remaining not-found claims without clear HHEM signal
+        not_found_other = [
+            c for c in claims
+            if c.ehr_status == EHRVerificationStatus.NOT_FOUND
+            and c not in hhem_hallucinated
+            and c not in not_found_faithful
+        ]
+        if not_found_other:
+            recommendations.append(
+                f"ℹ️ UNRESOLVED: {len(not_found_other)} claim(s) not in EHR, "
+                f"partially supported by transcript. Review recommended."
             )
         
         # All good
@@ -1077,24 +1222,29 @@ if __name__ == "__main__":
         "verified_claims": 9,
         "contradiction_claims": 2,
         "not_found_claims": 1,
-        "se_tested_claims": 2,  # Only contradictions!
+        "hhem_tested_claims": 3,
+        "hhem_unfaithful_claims": 1,
+        "se_tested_claims": 2,
         "confident_hallucinators": 1,
         "ambiguous_claims": 1,
         "overall_risk": "HIGH",
         "time_saved_percent": 78.5,
         "review_priority": "elevated",
         "recommendations": [
-            "🚨 CRITICAL: 1 claim(s) are confident but contradict EHR.",
-            "   • Warfarin 5mg daily (EHR shows no anticoagulation)",
+            "🚨 CRITICAL: 1 claim(s) contradict EHR and not supported by transcript.",
+            "   • Warfarin 5mg daily (HHEM=0.12)",
             "⚠️ HIGH RISK: 1 claim(s) need careful review.",
-            "ℹ️ NEW INFO: 1 claim(s) not in EHR."
+            "🔍 HHEM ALERT: 1 claim(s) not in EHR and not in transcript.",
+            "ℹ️ NEW INFO: 0 claim(s) not in EHR but supported by transcript."
         ]
     }
-    
-    print("TRUST EHR-First Validation Pipeline")
+
+    print("TRUST EHR-First Validation Pipeline (with HHEM)")
     print("=" * 50)
     print(f"Total claims extracted: {example_report['total_claims']}")
     print(f"EHR verified: {example_report['verified_claims']}")
+    print(f"HHEM tested: {example_report['hhem_tested_claims']}")
+    print(f"  - Unfaithful to transcript: {example_report['hhem_unfaithful_claims']}")
     print(f"Contradictions (SE tested): {example_report['contradiction_claims']}")
     print(f"  - Confident hallucinators: {example_report['confident_hallucinators']}")
     print(f"  - Ambiguous (high SE): {example_report['ambiguous_claims']}")
