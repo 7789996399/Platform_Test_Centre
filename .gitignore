@@ -34,6 +34,12 @@ dist/
 build/
 *.egg-info/
 
+# Model weights (too large for git)
+*.safetensors
+*.bin
+*.pt
+*.onnx
+
 # Data files (don't commit patient data!)
 *.csv
 *.xlsx
